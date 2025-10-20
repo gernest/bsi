@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	DataIndex   = []byte("__da__")
-	SearchIndex = []byte("__se__")
+	DataIndex   = []byte("d")
+	SearchIndex = []byte("s")
 
 	MetricsValue     = []byte("v")
 	MetricsTimestamp = []byte("t")
