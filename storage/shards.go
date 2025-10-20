@@ -36,6 +36,7 @@ func NewMap() *Map {
 func (m *Map) Range() iter.Seq2[string, *roaring.Bitmap] {
 	return func(yield func(string, *roaring.Bitmap) bool) {
 		for k, ra := range m.h2ra {
+			ra.Optimize()
 			if !yield(m.h2txt[k], ra) {
 				return
 			}
