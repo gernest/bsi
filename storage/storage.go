@@ -11,7 +11,7 @@ import (
 type DB interface {
 	AllocateID(size uint64) (hi uint64, err error)
 	UpdateSequence(uint64) error
-	GetTSID(out *tsid.ID) error
+	GetTSID(out *tsid.ID, labels []byte) error
 	Apply(data iter.Seq2[string, *roaring.Bitmap]) error
 }
 
@@ -41,7 +41,7 @@ func (db *Store) Add(rows []Row) error {
 			ma.Index(id, lo+uint64(i), rows[i].Timestamp, rows[i].Value)
 			continue
 		}
-		err = db.db.GetTSID(id)
+		err = db.db.GetTSID(id, rows[i].Labels)
 		if err != nil {
 			return err
 		}
