@@ -9,11 +9,12 @@ import (
 )
 
 var (
-	DataIndex        = []byte("__da__")
-	SearchIndex      = []byte("__se__")
-	MetricsValue     = []byte("__va__")
-	MetricsTimestamp = []byte("__ts__")
-	MetricsLabels    = []byte("__la__")
+	DataIndex   = []byte("__da__")
+	SearchIndex = []byte("__se__")
+
+	MetricsValue     = []byte("v")
+	MetricsTimestamp = []byte("t")
+	MetricsLabels    = []byte("l")
 )
 
 // View builds ISO 8601 year and week view.
