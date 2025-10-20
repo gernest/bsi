@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"hash/maphash"
 	"iter"
 	"math"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/gernest/u128/bitmaps"
 	"github.com/gernest/u128/storage/buffer"
 	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/tsid"
 )
 
@@ -19,38 +19,35 @@ const ()
 var bytesPool buffer.Pool
 
 type Map struct {
-	h2ra  map[uint64]*roaring.Bitmap
-	h2txt map[uint64]string
-	seed  maphash.Seed
+	data map[string]*roaring.Bitmap
 }
 
 func NewMap() *Map {
 	return &Map{
-		h2ra:  make(map[uint64]*roaring.Bitmap),
-		h2txt: make(map[uint64]string),
-		seed:  maphash.MakeSeed(),
+		data: make(map[string]*roaring.Bitmap),
 	}
 }
 
 // Range iterates over all computed bitmaps.
 func (m *Map) Range() iter.Seq2[string, *roaring.Bitmap] {
 	return func(yield func(string, *roaring.Bitmap) bool) {
-		for k, ra := range m.h2ra {
+		for k, ra := range m.data {
 			ra.Optimize()
-			if !yield(m.h2txt[k], ra) {
+			if !yield(k, ra) {
 				return
 			}
 		}
 	}
 }
 
+// Get returns a bitmap for the given name. We use unsafe to refer to name, make sure
+// name is live until  Range method returns.
 func (m *Map) Get(name []byte) *roaring.Bitmap {
-	sum := maphash.Bytes(m.seed, name)
-	ra, ok := m.h2ra[sum]
+	sum := magic.String(name)
+	ra, ok := m.data[sum]
 	if !ok {
 		ra = roaring.NewMapBitmap()
-		m.h2ra[sum] = ra
-		m.h2txt[sum] = string(name)
+		m.data[sum] = ra
 	}
 	return ra
 }
