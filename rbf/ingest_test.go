@@ -11,20 +11,14 @@ import (
 	"strings"
 	"testing"
 
-	//"time"
-
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/rbf/cfg"
-
-	txkey "github.com/gernest/u128/rbf/short_txkey"
-	. "github.com/gernest/u128/rbf/vprint" // nolint:staticcheck
+	"github.com/stretchr/testify/require"
 )
 
 func rbfName(index, field, view string, shard uint64) string {
-	return string(txkey.Prefix(index, field, view, shard))
+	return fmt.Sprintf("%v:%v:%v;%v", index, field, view, shard)
 }
-
-var _ = rbfName // keep linter happy
 
 /*
 // rbtree uses 15% memory and needs half the ingest time
@@ -65,12 +59,12 @@ func TestIngest_lots_of_views(t *testing.T) {
 
 	cfg := cfg.NewDefaultConfig()
 	db := NewDB(path, cfg)
-	PanicOn(db.Open())
+	require.NoError(t, db.Open())
 
 	// setup profiling
 	if false {
 		profile, err := os.Create("./rbf_ingest_put_ct.cpu")
-		PanicOn(err)
+		require.NoError(t, err)
 		_ = pprof.StartCPUProfile(profile)
 		defer func() {
 			pprof.StopCPUProfile()
@@ -80,7 +74,7 @@ func TestIngest_lots_of_views(t *testing.T) {
 
 	// put containers
 	tx, err := db.Begin(true)
-	PanicOn(err)
+	require.NoError(t, err)
 
 	index := "i"
 	field := "f"
@@ -103,43 +97,34 @@ func TestIngest_lots_of_views(t *testing.T) {
 		view = fmt.Sprintf("view_%v", i)
 		name := rbfName(index, field, view, shard)
 		err = tx.PutContainer(name, ckey, ct)
-		PanicOn(err)
+		require.NoError(t, err)
 		ct2, err := tx.Container(name, ckey)
-		PanicOn(err)
-		if err := ct2.BitwiseCompare(ct); err != nil {
-			PanicOn("ct2 != ct")
-		}
+		require.NoError(t, err)
+		require.NoError(t, ct2.BitwiseCompare(ct))
 
 		// write .dot of it...
 		if false { //ckey == nCt-1 {
 			c, err := tx.cursor(name)
-			if err == ErrBitmapNotFound {
-				PanicOn("not found")
-			} else if err != nil {
-				PanicOn(err)
-			}
+			require.NoError(t, err)
 			defer c.Close()
 			c.Dump("one.bitmap.dot.dump")
 		}
 	}
 
-	PanicOn(tx.Commit())
+	require.NoError(t, tx.Commit())
 
 	sz, err := DiskUse(path, "")
-	PanicOn(err)
+	require.NoError(t, err)
 	_ = sz
 	//vv("sz in bytes= %v", sz)
 	db.Close()
 }
 
 func DiskUse(root string, requiredSuffix string) (tot int, err error) {
-	if !DirExists(root) {
-		return -1, fmt.Errorf("listFilesUnderDir error: root directory '%v' not found", root)
-	}
 
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if info == nil {
-			PanicOn(fmt.Sprintf("info was nil for path = '%v'", path))
+			return nil
 		}
 		if info.IsDir() {
 			// skip the size of directories themselves, only summing files.
