@@ -19,7 +19,7 @@ var (
 	metrics     = []byte("metrics")
 	metricsSum  = []byte("sum")
 	metricsData = []byte("data")
-	search      = []byte("search")
+	search      = []byte("index")
 )
 
 type db struct {
