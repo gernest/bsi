@@ -488,6 +488,6 @@ func WalkPage(tx *Tx, pgno uint32, walker Walker) {
 	case PageTypeLeaf:
 		walker.Visit(pgno, Leaf)
 	default:
-		panic(err)
+		panic(fmt.Sprintf("unexpected page type %v", typ))
 	}
 }
