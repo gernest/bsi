@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gernest/u128/storage/buffer"
+	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/prefix"
 )
 
@@ -39,4 +40,23 @@ func Key(w *buffer.B, index, field, view []byte, shard uint64) []byte {
 	// sure the strings are sorted.
 	w.B = binary.BigEndian.AppendUint64(w.B, shard)
 	return w.B
+}
+
+func KeyViewPrefix(w *buffer.B, index, field, view []byte) []byte {
+	w.B = w.B[:0]
+
+	// Index is encoded as length prefix
+	w.B = prefix.Encode(w.B, index)
+	// Field is encoded as length prefixed
+	w.B = prefix.Encode(w.B, field)
+
+	// View is encoded as length prefixed
+	w.B = prefix.Encode(w.B, view)
+
+	return w.B
+}
+
+func GetShard(key string) uint64 {
+	b := magic.Slice(key)
+	return binary.BigEndian.Uint64(b[len(b)-8:])
 }

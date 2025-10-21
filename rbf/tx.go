@@ -705,6 +705,17 @@ func (tx *Tx) cursor(name string) (*Cursor, error) {
 	return c, nil
 }
 
+// CursorFromRoot returns a cursor from root page
+func (tx *Tx) CursorFromRoot(root uint32) *Cursor {
+	tx.mu.RLock()
+	defer tx.mu.RUnlock()
+
+	c := tx.db.getCursor(tx)
+	c.stack.top = 0
+	c.stack.elems[0] = stackElem{pgno: root}
+	return c
+}
+
 // RoaringBitmap returns a bitmap as a Roaring bitmap.
 func (tx *Tx) RoaringBitmap(name string) (*roaring.Bitmap, error) {
 	tx.mu.RLock()
