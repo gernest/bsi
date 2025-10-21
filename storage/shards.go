@@ -3,7 +3,6 @@ package storage
 import (
 	"iter"
 	"math"
-	"time"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
@@ -53,14 +52,8 @@ func (m *Map) Get(name []byte) *roaring.Bitmap {
 }
 
 // Index builds bitmap index for timeseries.
-func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value float64) {
+func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value float64, view []byte) {
 	shard := id / shardwidth.ShardWidth
-
-	vb := bytesPool.Get()
-
-	// all data is partitioned using ISO 8601 year and week
-	year, week := time.UnixMilli(ts).ISOWeek()
-	view := keys.View(vb, year, week)
 
 	kb := bytesPool.Get()
 
