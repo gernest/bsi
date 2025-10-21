@@ -74,6 +74,6 @@ func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value uint64, isHistogra
 	// Create search index
 	for i := range tsid.Rows {
 		ra := m.Get(keys.Key(kb, keys.SearchIndex, tsid.Views[i], view, shard))
-		bitmaps.BSI(ra, id, int64(tsid.Rows[i]))
+		bitmaps.Mutex(ra, id, tsid.Rows[i])
 	}
 }
