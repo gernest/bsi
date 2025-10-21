@@ -1,6 +1,7 @@
 package tsid
 
 import (
+	"bytes"
 	"encoding/binary"
 	"sync"
 
@@ -30,7 +31,7 @@ func (id *ID) Reset() {
 	id.ID = 0
 	clear(id.Views)
 	id.Views = id.Views[:0]
-	id.Rows = nil
+	id.Rows = id.Rows[:0]
 }
 
 func (id *ID) Release() {
@@ -40,6 +41,7 @@ func (id *ID) Release() {
 
 // Encode serialize id into w buffer.
 func (id *ID) Encode(w *buffer.B) {
+	id.Reset()
 	w.B = w.B[:0]
 
 	// id is the first item
@@ -69,8 +71,8 @@ func (id *ID) Decode(data []byte) {
 	var view []byte
 	for len(views) > 0 {
 		view, views = prefix.Decode(views)
-		id.Views = append(id.Views, view)
+		id.Views = append(id.Views, bytes.Clone(view))
 	}
 	rows, _ := prefix.Decode(left)
-	id.Rows = magic.ReinterpretSlice[uint64](rows)
+	id.Rows = append(id.Rows[:0], magic.ReinterpretSlice[uint64](rows)...)
 }

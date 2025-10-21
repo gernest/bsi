@@ -10,6 +10,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.307.1
 	github.com/stretchr/testify v1.11.1
+	go.etcd.io/bbolt v1.4.3
 	golang.org/x/sync v0.17.0
 )
 

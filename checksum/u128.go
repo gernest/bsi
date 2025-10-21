@@ -1,4 +1,4 @@
-package u128
+package checksum
 
 import (
 	"github.com/minio/highwayhash"

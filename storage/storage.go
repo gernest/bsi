@@ -12,7 +12,6 @@ import (
 
 type DB interface {
 	AllocateID(size uint64) (hi uint64, err error)
-	UpdateSequence(uint64) error
 	GetTSID(out *tsid.ID, view, labels []byte) error
 	Apply(data iter.Seq2[string, *roaring.Bitmap]) error
 }

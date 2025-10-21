@@ -3,10 +3,10 @@ package filterutil_test
 import (
 	"testing"
 
-	"github.com/gernest/ra/bitmaps"
-	"github.com/gernest/ra/bitmaps/filterutil"
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
+	"github.com/gernest/u128/bitmaps"
+	"github.com/gernest/u128/bitmaps/filterutil"
 	"github.com/stretchr/testify/require"
 )
 
