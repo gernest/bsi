@@ -20,8 +20,6 @@ import (
 )
 
 var (
-	sys         = []byte("sys")
-	metrics     = []byte("metrics")
 	metricsSum  = []byte("sum")
 	metricsData = []byte("data")
 	search      = []byte("index")
@@ -53,7 +51,7 @@ func (db *dbView) Close() error {
 // if size is 3 , it will return 4 which will yield sequence 1, 2, 3.
 func (db *dbView) AllocateID(size uint64) (hi uint64, err error) {
 	err = db.meta.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(sys)
+		b := tx.Bucket(metricsData)
 		o := b.Sequence()
 		if o == 0 {
 			o++
@@ -65,51 +63,10 @@ func (db *dbView) AllocateID(size uint64) (hi uint64, err error) {
 }
 
 // GetTSID creates or returns existing TSID from storage.
-//
-//	                                                     ┌──────┐
-//	                                                     │ sys  │
-//	                                                     │      │
-//	                                                     └──────┘
-//	                                                        │
-//	                                                        ▼
-//	                                                  ┌──────────┐
-//	                                                  │ metrics  │
-//	                                                  │          │
-//	                                                  └──────────┘
-//	                                                     │  │  │
-//	                     ┌───────────────────────────────┘  │  └───────────────────────────┐
-//	                     │                                  │                              │
-//	                     ▼                                  ▼                              ▼
-//	              ┌────────────┐                        ┌───────┐                    ┌──────────┐
-//	              │ checksums  │                        │ data  │                    │  index   │
-//	              │            │                        │       │                    │          │
-//	              └────────────┘                        └───────┘                    └──────────┘
-//	                     │                                  │                           │  │  │
-//	                     │                                  │                  ┌────────┘  │  └───────┐
-//	                     │                                  │                  │           │          │
-//	                     ▼                                  ▼                  ▼           ▼          ▼
-//	┌──────────────────────────────────────────┌────────────────────────────┌──────┐   ┌──────┐    ┌──────┐
-//	│u128 = {id =1 , view=[foo, bar, baz], rows│1 = {foo=xxx, bar=yyy baz=zz│}foo  │   │ bar  │    │ baz  │
-//	│                                          │           │                │  │   │   │      │    │      │
-//	└──────────────────────────────────────────└────────────────────────────└──────┘   └──────┘    └──────┘
-//	                                                                           │           │          │
-//	                                                                           ▼           ▼          ▼
-//	                                                                      ┌────────┐  ┌────────┐  ┌────────┐
-//	                                                                      │xxx = 1 │  │yyy = 2 │  │zzz = 3 │
-//	                                                                      │        │  │        │  │        │
-//	                                                                      └────────┘  └────────┘  └────────┘
 func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
 	return db.meta.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(sys)
-		metricsB, err := b.CreateBucketIfNotExists(metrics)
-		if err != nil {
-			return err
-		}
+		metricsSumB := tx.Bucket(metricsSum)
 
-		metricsSumB, err := metricsB.CreateBucketIfNotExists(metricsSum)
-		if err != nil {
-			return err
-		}
 		// This is the heart and building block of everything. We rely on speed and
 		// cryptographic property to ensure series are correctly enumerated in each
 		// view.
@@ -122,12 +79,13 @@ func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
 		}
 
 		out.Reset()
-		out.ID, err = metricsB.NextSequence()
-
-		searchIndexB, err := metricsB.CreateBucketIfNotExists(search)
+		var err error
+		out.ID, err = metricsSumB.NextSequence()
 		if err != nil {
-			return err
+			return fmt.Errorf("generating metrics sequence %w", err)
 		}
+
+		searchIndexB := tx.Bucket(search)
 
 		// Building index
 		for name, value := range buffer.RangeLabels(labels) {
@@ -167,10 +125,7 @@ func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
 		}
 
 		// 3. store labels_sequence_id => labels_data in data bucket
-		dB, err := metricsB.CreateBucketIfNotExists(metricsData)
-		if err != nil {
-			return fmt.Errorf("creating metrics data bucket %w", err)
-		}
+		dB := tx.Bucket(metricsData)
 		err = dB.Put(binary.BigEndian.AppendUint64(nil, out.ID), labels)
 		if err != nil {
 			return fmt.Errorf("storing metrics data %w", err)
@@ -224,14 +179,7 @@ func (db *dbView) Search(startTs, endTs int64, selectors []*labels.Matcher) erro
 
 func (db *dbView) buildIndex(matchers []*labels.Matcher, cb func(field string, ra *roaring.Bitmap) error) error {
 	return db.meta.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(sys).Bucket(metrics)
-		if b != nil {
-			b = b.Bucket(search)
-		}
-		if b == nil {
-			return nil
-		}
-
+		b := tx.Bucket(search)
 		for _, l := range matchers {
 			sb := b.Bucket(magic.Slice(l.Name))
 			if sb == nil {

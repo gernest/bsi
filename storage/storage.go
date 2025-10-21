@@ -81,6 +81,7 @@ func (db *Store) Init(dataPath string) error {
 
 	db.db.Init(func(vk viewKey, vo viewOption) (*dbView, error) {
 		base := filepath.Join(vo.dataPath, vk.String())
+		var createBuckets bool
 		if vo.write {
 			_, err := os.Stat(base)
 			if os.IsNotExist(err) {
@@ -88,6 +89,7 @@ func (db *Store) Init(dataPath string) error {
 				db.tree.mu.Lock()
 				db.tree.views.ReplaceOrInsert(vk)
 				db.tree.mu.Unlock()
+				createBuckets = true
 			}
 		}
 		err := os.MkdirAll(base, 0755)
@@ -104,6 +106,29 @@ func (db *Store) Init(dataPath string) error {
 		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("opening text database %w", err)
+		}
+		if createBuckets {
+			// opening write transaction is not cheap.  Create buckets only when we have to.
+			err = txt.Update(func(tx *bbolt.Tx) error {
+				_, err = tx.CreateBucket(metricsSum)
+				if err != nil {
+					return fmt.Errorf("creating sum bucket %w", err)
+				}
+				_, err = tx.CreateBucket(metricsData)
+				if err != nil {
+					return fmt.Errorf("creating data bucket %w", err)
+				}
+				_, err = tx.CreateBucket(search)
+				if err != nil {
+					return fmt.Errorf("creating search bucket %w", err)
+				}
+				return nil
+			})
+			if err != nil {
+				txt.Close()
+				db.Close()
+				return nil, err
+			}
 		}
 		return &dbView{rbf: db, meta: txt}, nil
 	})
