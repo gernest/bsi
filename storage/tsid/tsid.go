@@ -14,8 +14,6 @@ import (
 var bytePool buffer.Pool
 var idPool = &sync.Pool{New: func() any { return new(ID) }}
 
-type Raw []byte
-
 // ID identifies stored timeseries
 type ID struct {
 	Views [][]byte
