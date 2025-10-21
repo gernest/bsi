@@ -2,22 +2,14 @@ package storage
 
 import (
 	"bytes"
-	"iter"
 	"time"
 
-	"github.com/gernest/roaring"
 	"github.com/gernest/u128/storage/keys"
 	"github.com/gernest/u128/storage/tsid"
 )
 
-type DB interface {
-	AllocateID(size uint64) (hi uint64, err error)
-	GetTSID(out *tsid.ID, view, labels []byte) error
-	Apply(data iter.Seq2[string, *roaring.Bitmap]) error
-}
-
 type Store struct {
-	db DB
+	db db
 }
 
 // Add adds rows to storage.

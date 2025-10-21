@@ -37,19 +37,24 @@ type db struct {
 	meta *bbolt.DB
 }
 
-var _ DB = (*db)(nil)
-
-// AllocateID implements DB using bolt bucket sequence api.
+// AllocateID assigns monotonically increasing sequences covering range size.
+// Returns the upper bound which is exclusive. Count starts from 1.
+//
+// if size is 3 , it will return 4 which will yield sequence 1, 2, 3.
 func (db *db) AllocateID(size uint64) (hi uint64, err error) {
 	err = db.meta.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(sys)
-		hi = b.Sequence() + size
+		o := b.Sequence()
+		if o == 0 {
+			o++
+		}
+		hi = o + size
 		return b.SetSequence(hi)
 	})
 	return
 }
 
-// GetTSID implements DB.
+// GetTSID generates or returns existing TSID from storage.
 //
 // This uses a single bolt database as the underlying storage. We rely heavily on
 // nested buckets to map key hierarchy.
