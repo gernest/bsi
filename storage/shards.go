@@ -51,29 +51,29 @@ func (m *Map) Get(name []byte) *roaring.Bitmap {
 }
 
 // Index builds bitmap index for timeseries.
-func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value uint64, isHistogram bool, view []byte) {
+func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value uint64, isHistogram bool) {
 	shard := id / shardwidth.ShardWidth
 
 	kb := bytesPool.Get()
 
 	// 1. store value
-	valueB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, view, shard))
+	valueB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, shard))
 	bitmaps.BSI(valueB, id, int64(value))
 
 	// 2. store timestamp
-	tsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsTimestamp, view, shard))
+	tsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsTimestamp, shard))
 	bitmaps.BSI(tsB, id, ts)
 
 	// 3. store labels
-	labelsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsLabels, view, shard))
+	labelsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsLabels, shard))
 	bitmaps.BSI(labelsB, id, int64(tsid.ID))
 
-	histogramB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, view, shard))
+	histogramB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, shard))
 	bitmaps.Boolean(histogramB, id, isHistogram)
 
 	// Create search index
 	for i := range tsid.Rows {
-		ra := m.Get(keys.Key(kb, keys.SearchIndex, tsid.Views[i], view, shard))
+		ra := m.Get(keys.Key(kb, keys.SearchIndex, tsid.Views[i], shard))
 		bitmaps.Mutex(ra, id, tsid.Rows[i])
 	}
 }

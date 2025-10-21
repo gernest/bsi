@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"iter"
 	"runtime"
@@ -32,16 +33,31 @@ var (
 	search      = []byte("index")
 )
 
-type db struct {
+// Unique ISO ISO 8601 (yer, week) tuple. Stores timeseries data using rbf for numerical
+// data and bolt for non numerical data.
+//
+// Creates a total of 3 files.
+// - data
+// - wal
+// - text
+// dta and wal are managed by rbf and text is a bolt database.
+type dbView struct {
 	rbf  *rbf.DB
 	meta *bbolt.DB
+}
+
+func (db *dbView) Close() error {
+	return errors.Join(
+		db.rbf.Close(),
+		db.meta.Close(),
+	)
 }
 
 // AllocateID assigns monotonically increasing sequences covering range size.
 // Returns the upper bound which is exclusive. Count starts from 1.
 //
 // if size is 3 , it will return 4 which will yield sequence 1, 2, 3.
-func (db *db) AllocateID(size uint64) (hi uint64, err error) {
+func (db *dbView) AllocateID(size uint64) (hi uint64, err error) {
 	err = db.meta.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(sys)
 		o := b.Sequence()
@@ -65,12 +81,6 @@ func (db *db) AllocateID(size uint64) (hi uint64, err error) {
 //	                                                     │ sys  │
 //	                                                     │      │
 //	                                                     └──────┘
-//	                                                        │
-//	                                                        ▼
-//	                                                    ┌───────┐
-//	                                                    │ view  │
-//	                                                    │       │
-//	                                                    └───────┘
 //	                                                        │
 //	                                                        ▼
 //	                                                  ┌──────────┐
@@ -99,17 +109,10 @@ func (db *db) AllocateID(size uint64) (hi uint64, err error) {
 //	                                                                      │xxx = 1 │  │yyy = 2 │  │zzz = 3 │
 //	                                                                      │        │  │        │  │        │
 //	                                                                      └────────┘  └────────┘  └────────┘
-//
-// We scope things under view bucket to simplify application of retention policies.
-// We can simply delete the view bucket to remove all old data collected in it.
-func (db *db) GetTSID(out *tsid.ID, view, labels []byte) error {
+func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
 	return db.meta.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(sys)
-		vb, err := b.CreateBucketIfNotExists(view)
-		if err != nil {
-			return err
-		}
-		metricsB, err := vb.CreateBucketIfNotExists(metrics)
+		metricsB, err := b.CreateBucketIfNotExists(metrics)
 		if err != nil {
 			return err
 		}
@@ -188,7 +191,7 @@ func (db *db) GetTSID(out *tsid.ID, view, labels []byte) error {
 }
 
 // Apply implements DB.
-func (db *db) Apply(data iter.Seq2[string, *roaring.Bitmap]) error {
+func (db *dbView) Apply(data iter.Seq2[string, *roaring.Bitmap]) error {
 	tx, err := db.rbf.Begin(true)
 	if err != nil {
 		return fmt.Errorf("creating write transaction %w", err)
@@ -206,7 +209,7 @@ func (db *db) Apply(data iter.Seq2[string, *roaring.Bitmap]) error {
 
 // Search finds matching rows across multiple views and fields. Computing views is left
 // to the caller, the only condition is they must be sorted in lexicographic order.
-func (db *db) Search(startView, endView []byte, startTs, endTs int64, selectors []*labels.Matcher) error {
+func (db *dbView) Search(startView, endView []byte, startTs, endTs int64, selectors []*labels.Matcher) error {
 
 	// It is not ideal to keep long running read transaction to conserve memory.
 	// We instead open short lived ones to find relevant bits.
@@ -255,7 +258,7 @@ func (db *db) Search(startView, endView []byte, startTs, endTs int64, selectors 
 }
 
 // Search for all observed views within the range.
-func (db *db) findMatchingViews(start, end []byte, cb func(view []byte) error) error {
+func (db *dbView) findMatchingViews(start, end []byte, cb func(view []byte) error) error {
 	return db.meta.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(sys)
 		cu := b.Cursor()

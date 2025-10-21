@@ -1,8 +1,8 @@
 package storage
 
-type Row struct {
-	Labels    []byte
-	Timestamp int64
-	Value     uint64
-	Histogram []byte
+type Rows struct {
+	Labels    [][]byte
+	Timestamp []int64
+	Value     []uint64
+	Histogram [][]byte
 }

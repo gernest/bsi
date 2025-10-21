@@ -6,6 +6,7 @@ require (
 	github.com/benbjohnson/immutable v0.4.3
 	github.com/felixge/fgprof v0.9.5
 	github.com/gernest/roaring v0.30.0
+	github.com/google/btree v1.1.3
 	github.com/minio/highwayhash v1.0.3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.307.1
