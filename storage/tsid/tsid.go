@@ -8,23 +8,29 @@ import (
 	"github.com/gernest/u128/storage/buffer"
 	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/prefix"
-	_ "github.com/prometheus/prometheus/model/labels"
 )
 
-var bytePool buffer.Pool
-var idPool = &sync.Pool{New: func() any { return new(ID) }}
+var (
+	bytePool buffer.Pool
+	idPool   = &sync.Pool{New: func() any { return new(ID) }}
+)
 
-// ID identifies stored timeseries
+// ID is a unique identifier for metrics group that is used for indexing. This is only
+// used during ingestion. The uint64 value in ID field is the one used during search,
+// the rest of the fields are here to speed up ingestion.
 type ID struct {
 	Views [][]byte
 	Rows  []uint64
 	ID    uint64
 }
 
+// Get returns a new pooled ID. Make sure to call Release when done using it to return
+// it back to the pool.
 func Get() *ID {
 	return idPool.Get().(*ID)
 }
 
+// Reset clears id but rain capacity.
 func (id *ID) Reset() {
 	id.ID = 0
 	clear(id.Views)
@@ -32,6 +38,7 @@ func (id *ID) Reset() {
 	id.Rows = id.Rows[:0]
 }
 
+// Release returns id back to the pool to be reused.
 func (id *ID) Release() {
 	id.Reset()
 	idPool.Put(id)
@@ -59,7 +66,7 @@ func (id *ID) Encode(w *buffer.B) {
 	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Rows))
 }
 
-// Decode unpacks data into id.  This does not copy, use Clone method to create a copy.
+// Decode unpacks data into id.
 func (id *ID) Decode(data []byte) {
 	var n int
 	id.ID, n = binary.Uvarint(data)
