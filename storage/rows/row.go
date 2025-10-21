@@ -408,17 +408,10 @@ func (r *Row) Includes(col uint64) bool {
 // This could point to a mmapped roaring bitmap or an in-memory bitmap. The
 // width of the segment will always match the shard width.
 type RowSegment struct {
-	// Shard this segment belongs to
-	shard uint64
-
-	// Underlying raw bitmap implementation.
-	// This is an mmapped bitmap if writable is false. Otherwise
-	// it is a heap allocated bitmap which can be manipulated.
 	data     *roaring.Bitmap
+	shard    uint64
+	n        uint64
 	writable bool
-
-	// Bit count
-	n uint64
 }
 
 func (s *RowSegment) Shard() uint64 {

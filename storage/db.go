@@ -269,13 +269,13 @@ func (db *db) findMatchingViews(start, end []byte, cb func(view []byte) error) e
 }
 
 type rowsSelector struct {
-	db        *rbf.DB
-	mu        sync.Mutex
 	err       atomic.Value
-	predicate int64
-	end       int64
+	db        *rbf.DB
 	views     [][]byte
 	data      [][]shardMatch
+	predicate int64
+	end       int64
+	mu        sync.Mutex
 }
 
 func newRowsSelector(predicate, end int64) *rowsSelector {
@@ -286,8 +286,8 @@ func newRowsSelector(predicate, end int64) *rowsSelector {
 }
 
 type shardMatch struct {
-	shard uint64
 	ra    *roaring.Bitmap
+	shard uint64
 }
 
 func (t *rowsSelector) Any() bool {
