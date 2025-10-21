@@ -3,24 +3,38 @@ package keys
 import (
 	"encoding/binary"
 	"fmt"
+	"slices"
+	"strconv"
 
 	"github.com/gernest/u128/storage/buffer"
 	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/prefix"
 )
 
+// common keys used in storage.
 var (
 	DataIndex   = []byte("d")
 	SearchIndex = []byte("s")
 
+	MetricsHistogram = []byte("h")
 	MetricsValue     = []byte("v")
 	MetricsTimestamp = []byte("t")
 	MetricsLabels    = []byte("l")
 )
 
-// View builds ISO 8601 year and week view.
-func View(b *buffer.B, year, week int) []byte {
-	b.B = fmt.Appendf(b.B[:0], "%04d_%02d", year, week)
+// View builds ISO 8601 year and week view. We encode year in 4 digits and week in two
+// digits.
+func View(b *buffer.B, y, m int) []byte {
+	b.B = slices.Grow(b.B, 6)[:6]
+	if y < 1000 {
+		_ = fmt.Appendf(b.B[:0], "%04d", y)
+	} else if y >= 10000 {
+		_ = fmt.Appendf(b.B[:0], "%04d", y%1000)
+	} else {
+		strconv.AppendInt(b.B[:0], int64(y), 10)
+	}
+	b.B[4] = '0' + byte(m/10)
+	b.B[5] = '0' + byte(m%10)
 	return b.B
 }
 

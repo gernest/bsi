@@ -3,5 +3,6 @@ package storage
 type Row struct {
 	Labels    []byte
 	Timestamp int64
-	Value     float64
+	Value     uint64
+	Histogram []byte
 }

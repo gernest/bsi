@@ -48,14 +48,14 @@ func (db *Store) Add(rows []Row) error {
 		if i != 0 && bytes.Equal(rows[i].Labels, rows[i-1].Labels) {
 			// fast path: consecutive rows belongs to the same metrics group.
 			// reuse the same tsid.
-			ma.Index(id, lo+uint64(i), r.Timestamp, r.Value, view)
+			ma.Index(id, lo+uint64(i), r.Timestamp, r.Value, len(r.Histogram) != 0, view)
 			continue
 		}
 		err = db.db.GetTSID(id, view, rows[i].Labels)
 		if err != nil {
 			return err
 		}
-		ma.Index(id, lo+uint64(i), r.Timestamp, r.Value, view)
+		ma.Index(id, lo+uint64(i), r.Timestamp, r.Value, len(r.Histogram) != 0, view)
 	}
 	return db.db.Apply(ma.Range())
 }

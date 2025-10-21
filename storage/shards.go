@@ -2,7 +2,6 @@ package storage
 
 import (
 	"iter"
-	"math"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
@@ -52,14 +51,14 @@ func (m *Map) Get(name []byte) *roaring.Bitmap {
 }
 
 // Index builds bitmap index for timeseries.
-func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value float64, view []byte) {
+func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value uint64, isHistogram bool, view []byte) {
 	shard := id / shardwidth.ShardWidth
 
 	kb := bytesPool.Get()
 
 	// 1. store value
 	valueB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, view, shard))
-	bitmaps.BSI(valueB, id, int64(math.Float64bits(value)))
+	bitmaps.BSI(valueB, id, int64(value))
 
 	// 2. store timestamp
 	tsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsTimestamp, view, shard))
@@ -68,6 +67,9 @@ func (m *Map) Index(tsid *tsid.ID, id uint64, ts int64, value float64, view []by
 	// 3. store labels
 	labelsB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsLabels, view, shard))
 	bitmaps.BSI(labelsB, id, int64(tsid.ID))
+
+	histogramB := m.Get(keys.Key(kb, keys.DataIndex, keys.MetricsValue, view, shard))
+	bitmaps.Boolean(histogramB, id, isHistogram)
 
 	// Create search index
 	for i := range tsid.Rows {

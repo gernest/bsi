@@ -7,6 +7,15 @@ import (
 	"github.com/gernest/roaring/shardwidth"
 )
 
+const (
+	// Row ids used for boolean fields.
+	falseRowID = uint64(0)
+	trueRowID  = uint64(1)
+
+	falseRowOffset = 0 * shardwidth.ShardWidth // fragment row 0
+	trueRowOffset  = 1 * shardwidth.ShardWidth // fragment row 1
+)
+
 // Mutex (id, value[0]), (id, value[1])  .... as MUTEX into ra.
 func Mutex(ra *roaring.Bitmap, id uint64, value ...uint64) {
 	for i := range value {
@@ -44,5 +53,14 @@ func BSI(ra *roaring.Bitmap, id uint64, signedValue int64) {
 			ra.DirectAdd(row*shardwidth.ShardWidth + fragmentColumn)
 		}
 		row++
+	}
+}
+
+func Boolean(m *roaring.Bitmap, id uint64, value bool) {
+	fragmentColumn := id % shardwidth.ShardWidth
+	if value {
+		m.DirectAdd(trueRowOffset + fragmentColumn)
+	} else {
+		m.DirectAdd(falseRowOffset + fragmentColumn)
 	}
 }
