@@ -27,7 +27,7 @@ type Store struct {
 
 type viewKey struct {
 	year uint16
-	week uint8
+	week uint16
 }
 
 type viewOption struct {
@@ -73,7 +73,7 @@ func (db *Store) Init(dataPath string) error {
 		}
 		db.tree.views.ReplaceOrInsert(viewKey{
 			year: uint16(y),
-			week: uint8(w),
+			week: uint16(w),
 		})
 	}
 
