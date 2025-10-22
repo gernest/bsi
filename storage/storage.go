@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"github.com/gernest/u128/rbf"
 	"github.com/gernest/u128/storage/keys"
 	"github.com/gernest/u128/storage/single"
-	"github.com/gernest/u128/storage/tsid"
 	"github.com/google/btree"
 	"go.etcd.io/bbolt"
 )
@@ -118,6 +116,10 @@ func (db *Store) Init(dataPath string) error {
 				if err != nil {
 					return fmt.Errorf("creating data bucket %w", err)
 				}
+				_, err = tx.CreateBucket(histogramData)
+				if err != nil {
+					return fmt.Errorf("creating histogram bucket %w", err)
+				}
 				_, err = tx.CreateBucket(search)
 				if err != nil {
 					return fmt.Errorf("creating search bucket %w", err)
@@ -133,50 +135,4 @@ func (db *Store) Init(dataPath string) error {
 		return &dbView{rbf: db, meta: txt}, nil
 	})
 	return nil
-}
-
-// Add adds rows to storage.
-func (db *Store) Add(year int, week int, rows *Rows) error {
-	da, done, err := db.db.Do(viewKey{year: uint16(year), week: uint8(week)}, viewOption{dataPath: db.dataPath, write: true})
-	if err != nil {
-		return fmt.Errorf("opening view database %w", err)
-	}
-	defer done.Close()
-
-	// 1. Allocate sequences covering all rows.
-	hi, err := da.AllocateID(uint64(len(rows.Timestamp)))
-	if err != nil {
-		return err
-	}
-	// lo is the first id.
-	lo := hi - uint64(len(rows.Timestamp))
-
-	id := tsid.Get()
-	defer id.Release()
-
-	vb := bytesPool.Get()
-
-	defer bytesPool.Put(vb)
-
-	ma := NewMap()
-
-	for i := range rows.Timestamp {
-
-		if i == 0 || !bytes.Equal(rows.Labels[i], rows.Labels[i-1]) {
-			// The check above ensures we only compute tsid if we care processing
-			// rows with different series.
-			// Ingesting same series with many samples will avoid this expensive call
-			// and just use already computed tsid.
-			err = da.GetTSID(id, rows.Labels[i])
-			if err != nil {
-				return err
-			}
-		}
-
-		ma.Index(id, lo+uint64(i),
-			rows.Timestamp[i],
-			rows.Value[i],
-			len(rows.Histogram[i]) != 0)
-	}
-	return da.Apply(ma.Range())
 }

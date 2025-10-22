@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	metricsSum  = []byte("sum")
-	metricsData = []byte("data")
-	search      = []byte("index")
+	metricsSum    = []byte("sum")
+	metricsData   = []byte("data")
+	histogramData = []byte("floats")
+	search        = []byte("index")
 )
 
 // Unique ISO ISO 8601 (yer, week) tuple. Stores timeseries data using rbf for numerical
@@ -129,6 +130,27 @@ func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
 		err = dB.Put(binary.BigEndian.AppendUint64(nil, out.ID), labels)
 		if err != nil {
 			return fmt.Errorf("storing metrics data %w", err)
+		}
+		return nil
+	})
+}
+
+func (db *dbView) TranslateHistogram(values []uint64, data [][]byte) error {
+	return db.meta.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(histogramData)
+		for i := range data {
+			if len(data[i]) == 0 {
+				continue
+			}
+			nxt, err := b.NextSequence()
+			if err != nil {
+				return fmt.Errorf("assigning histogram sequence %w", err)
+			}
+			values[i] = nxt
+			err = b.Put(binary.BigEndian.AppendUint64(nil, nxt), data[i])
+			if err != nil {
+				return fmt.Errorf("storing histogram sequence %w", err)
+			}
 		}
 		return nil
 	})

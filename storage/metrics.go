@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"iter"
+	"math"
 	"slices"
 	"unsafe"
 
@@ -31,6 +32,22 @@ type Rows struct {
 	Timestamp []int64
 	Value     []uint64
 	Histogram [][]byte
+}
+
+// AppendFloat stores float sample.
+func (r *Rows) AppendFloat(la []byte, ts int64, value float64) {
+	r.Labels = append(r.Labels, la)
+	r.Timestamp = append(r.Timestamp, ts)
+	r.Value = append(r.Value, math.Float64bits(value))
+	r.Histogram = append(r.Histogram, nil)
+}
+
+// AppendHistogram stores histogram sample.
+func (r *Rows) AppendHistogram(la []byte, ts int64, value []byte) {
+	r.Labels = append(r.Labels, la)
+	r.Timestamp = append(r.Timestamp, ts)
+	r.Value = append(r.Value, 0)
+	r.Histogram = append(r.Histogram, value)
 }
 
 // Reset resets r fields and retain capacity.
