@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,10 +11,19 @@ import (
 
 	"github.com/gernest/u128/rbf"
 	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/storage/paths"
 	"github.com/gernest/u128/storage/single"
+	"github.com/gernest/u128/storage/tsid"
 	"github.com/google/btree"
+	"github.com/minio/minlz"
 	"go.etcd.io/bbolt"
 )
+
+var enableCompaction = flag.Bool("compaction.enabled", false, "When true, ingested rows will be processed in the background.")
+
+var writerPool = sync.Pool{New: func() any {
+	return minlz.NewWriter(nil)
+}}
 
 // Store implements timeseries database.
 type Store struct {
@@ -135,4 +146,73 @@ func (db *Store) Init(dataPath string) error {
 		return &dbView{rbf: db, meta: txt}, nil
 	})
 	return nil
+}
+
+func (db *Store) AddRows(year, week int, rows *Rows) error {
+	if *enableCompaction {
+		// fast path: serialize the rows and write them
+		b := bytesPool.Get()
+		defer bytesPool.Put(b)
+
+		sb := bytesPool.Get()
+
+		w := writerPool.Get().(*minlz.Writer)
+		w.Reset(w)
+
+		rows.Serialize(sb)
+		_, err := w.Write(sb.B)
+		w.Reset(nil)
+		writerPool.Put(w)
+		bytesPool.Put(sb)
+		if err != nil {
+			return fmt.Errorf("compressing serialized rows %w", err)
+		}
+		file := paths.Rows(db.dataPath, year, week, len(rows.Timestamp))
+
+		// we need to make sure the directory exists
+		dir := filepath.Dir(file)
+		err = os.MkdirAll(dir, 0755)
+		if err != nil {
+			return fmt.Errorf("creating view directory %w", err)
+		}
+		return os.WriteFile(file, b.B, 0600)
+	}
+
+	da, done, err := db.db.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
+	if err != nil {
+		return fmt.Errorf("opening view database &w", err)
+	}
+	defer done.Close()
+
+	hi, err := da.AllocateID(uint64(len(rows.Timestamp)))
+	if err != nil {
+		return fmt.Errorf("assigning ids to rows %w", err)
+	}
+
+	for i := range rows.Histogram {
+		if len(rows.Histogram[i]) != 0 {
+			err = da.TranslateHistogram(rows.Value, rows.Histogram)
+			if err != nil {
+				return fmt.Errorf("translating histograms %w", err)
+			}
+			break
+		}
+	}
+
+	id := tsid.Get()
+	defer id.Release()
+	ma := NewMap()
+
+	start := hi - uint64(len(rows.Timestamp))
+	for i := range id.Rows {
+		if i == 0 || !bytes.Equal(rows.Labels[i], rows.Labels[i-1]) {
+			err = da.GetTSID(id, rows.Labels[i])
+			if err != nil {
+				return fmt.Errorf("getting tsid %w", err)
+			}
+		}
+		ma.Index(id, start+uint64(i), rows.Timestamp[i], rows.Value[i], len(rows.Histogram) != 0)
+	}
+
+	return da.Apply(ma.Range())
 }

@@ -8,6 +8,8 @@ require (
 	github.com/gernest/roaring v0.30.0
 	github.com/google/btree v1.1.3
 	github.com/minio/highwayhash v1.0.3
+	github.com/minio/minlz v1.0.1
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.307.1
 	github.com/stretchr/testify v1.11.1
@@ -20,6 +22,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/google/pprof v0.0.0-20250923004556-9e5a51aed1e8 // indirect
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/molecula/apophenia v0.0.0-20190827192002-68b7a14a478b // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
