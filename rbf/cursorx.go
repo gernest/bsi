@@ -236,16 +236,6 @@ func (c *Cursor) Rows() ([]uint64, error) {
 	return rows, err
 }
 
-func (tx *Tx) FieldViews() []string {
-	records, _ := tx.RootRecords()
-	a := make([]string, 0, records.Len())
-	for itr := records.Iterator(); !itr.Done(); {
-		name, _, _ := itr.Next()
-		a = append(a, name)
-	}
-	return a
-}
-
 func (c *Cursor) DumpKeys() {
 	if err := c.First(); err != nil {
 		// ignoring errors for this debug function
@@ -461,8 +451,8 @@ const (
 )
 
 type Walker interface {
-	Visitor(pgno uint32, records []*RootRecord)
-	VisitRoot(pgno uint32, name string)
+	Visitor(pgno uint32, records []Record)
+	VisitRoot(pgno uint32, name Key)
 	Visit(pgno uint32, n Nodetype)
 }
 

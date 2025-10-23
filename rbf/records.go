@@ -3,6 +3,7 @@ package rbf
 import (
 	"bytes"
 	"cmp"
+	"fmt"
 	"io"
 	"unsafe"
 
@@ -19,6 +20,17 @@ type Records = immutable.SortedMap[Key, uint32]
 type Key struct {
 	Column checksum.U128
 	Shard  uint64
+}
+
+func (k Key) String() string {
+	return fmt.Sprintf("%x_%d", k.Column, k.Shard)
+}
+
+var zero Key
+
+// IsEmpty returns true if key is zero.
+func (k Key) IsEmpty() bool {
+	return k == zero
 }
 
 type Record struct {

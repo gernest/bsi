@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"iter"
 	"slices"
 
 	"github.com/gernest/roaring"
@@ -165,7 +164,7 @@ func (db *dbView) TranslateHistogram(values []uint64, data [][]byte) error {
 }
 
 // Apply implements DB.
-func (db *dbView) Apply(data iter.Seq2[string, *roaring.Bitmap]) error {
+func (db *dbView) Apply(data rbf.Map) error {
 	tx, err := db.rbf.Begin(true)
 	if err != nil {
 		return fmt.Errorf("creating write transaction %w", err)

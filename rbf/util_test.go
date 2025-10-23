@@ -47,9 +47,9 @@ func checkElemNBitN(tx *Tx, pgno uint32) {
 	}
 
 	if IsMetaPage(page) {
-		visitor := func(pgno uint32, records []*RootRecord) {
+		visitor := func(pgno uint32, records []Record) {
 			for _, record := range records {
-				checkElemNBitN(tx, record.Pgno)
+				checkElemNBitN(tx, record.Page)
 			}
 		}
 		Walk(tx, readMetaRootRecordPageNo(page), visitor)

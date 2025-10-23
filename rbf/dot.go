@@ -61,14 +61,14 @@ func Dumpdot(tx *Tx, pgno uint32, parent string, writer io.Writer) {
 		//fmt.Fprintf(writer, "└── <FREELIST>\n")
 		//treedump(tx, readMetaFreelistPageNo(page), indent+"    ")
 
-		visitor := func(pgno uint32, records []*RootRecord) {
+		visitor := func(pgno uint32, records []Record) {
 			rr := fmt.Sprintf("rr%d", pgno)
 			fmt.Fprintf(writer, "%s[label=\"ROOT RECORD(%d): n=%d\"]\n", rr, pgno, len(records))
 			for _, record := range records {
-				root := fmt.Sprintf("root%d", record.Pgno)
-				fmt.Fprintf(writer, "%s[label=\"ROOT(%d)| %s\"]\n%s->%s\n", root, record.Pgno, record.Name, rr, root)
-				p := fmt.Sprintf("root%d", record.Pgno)
-				Dumpdot(tx, record.Pgno, p, writer)
+				root := fmt.Sprintf("root%d", record.Page)
+				fmt.Fprintf(writer, "%s[label=\"ROOT(%d)| %s\"]\n%s->%s\n", root, record.Page, record.Key(), rr, root)
+				p := fmt.Sprintf("root%d", record.Page)
+				Dumpdot(tx, record.Page, p, writer)
 
 			}
 		}

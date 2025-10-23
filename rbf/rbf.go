@@ -157,12 +157,12 @@ func writeRootRecordOverflowPgno(page []byte, pgno uint32) {
 	binary.BigEndian.PutUint32(page[8:], pgno)
 }
 
-func readRootRecords(page []byte) (records []*RootRecord, err error) {
+func readRootRecords(page []byte) (records []Record, err error) {
 	for data := page[rootRecordPageHeaderSize:]; ; {
-		var rec *RootRecord
-		if rec, data, err = ReadRootRecord(data); err != nil {
+		var rec Record
+		if rec, data, err = ReadRecord(data); err != nil {
 			return records, err
-		} else if rec == nil {
+		} else if rec.IsEmpty() {
 			return records, nil
 		}
 		records = append(records, rec)
@@ -173,13 +173,17 @@ func readRootRecords(page []byte) (records []*RootRecord, err error) {
 // We can return io.ErrShortBuffer in err. If we still have records
 // to write that don't fit on page, remain will point to the next
 // record that hasn't yet been written.
-func writeRootRecords(page []byte, itr *immutable.SortedMapIterator[string, uint32]) (err error) {
+func writeRootRecords(page []byte, itr *immutable.SortedMapIterator[Key, uint32]) (err error) {
 	data := page[rootRecordPageHeaderSize:]
 
 	for !itr.Done() {
 		name, pgno, _ := itr.Next()
 
-		data, err = WriteRootRecord(data, &RootRecord{Name: name, Pgno: pgno})
+		data, err = WriteRecord(data, Record{
+			Page:   pgno,
+			Shard:  name.Shard,
+			Column: name.Column,
+		})
 		if err != nil {
 			itr.Seek(name)
 			return err
@@ -710,7 +714,7 @@ func Pagedump(b []byte, indent string, writer io.Writer) {
 	}
 }
 
-func Walk(tx *Tx, pgno uint32, v func(uint32, []*RootRecord)) {
+func Walk(tx *Tx, pgno uint32, v func(uint32, []Record)) {
 	for pgno := readMetaRootRecordPageNo(tx.meta[:]); pgno != 0; {
 		page, _, err := tx.readPage(pgno)
 		if err != nil {

@@ -128,7 +128,7 @@ func MustBegin(tb testing.TB, db *rbf.DB, writable bool) *rbf.Tx {
 var _ = MustAddRandom
 
 // MustAddRandom adds values to a bitmap in a random order.
-func MustAddRandom(tb testing.TB, rand *rand.Rand, tx *rbf.Tx, name string, values ...uint64) {
+func MustAddRandom(tb testing.TB, rand *rand.Rand, tx *rbf.Tx, name rbf.Key, values ...uint64) {
 	tb.Helper()
 	for _, i := range rand.Perm(len(values)) {
 		v := values[i]

@@ -12,12 +12,16 @@ import (
 	"testing"
 
 	"github.com/gernest/roaring"
+	"github.com/gernest/u128/checksum"
 	"github.com/gernest/u128/rbf/cfg"
 	"github.com/stretchr/testify/require"
 )
 
-func rbfName(index, field, view string, shard uint64) string {
-	return fmt.Sprintf("%v:%v:%v;%v", index, field, view, shard)
+func rbfName(index, field, view string, shard uint64) Key {
+	k := fmt.Sprintf("%v:%v:%v;%v", index, field, view, shard)
+	return Key{
+		Column: checksum.Hash([]byte(k)),
+	}
 }
 
 /*

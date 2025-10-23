@@ -171,12 +171,12 @@ func (db *Store) AddRows(year, week int, rows *Rows) error {
 		}
 	}
 
-	ma := NewMap()
+	ma := make(rbf.Map)
 
 	start := hi - uint64(len(rows.Timestamp))
 	for i := range rows.Timestamp {
-		ma.Index(&ids.B[i], start+uint64(i), rows.Timestamp[i], rows.Value[i], len(rows.Histogram) != 0)
+		buildIndex(ma, &ids.B[i], start+uint64(i), rows.Timestamp[i], rows.Value[i], len(rows.Histogram) != 0)
 	}
 
-	return da.Apply(ma.Range())
+	return da.Apply(ma)
 }

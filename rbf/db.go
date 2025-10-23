@@ -15,7 +15,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/benbjohnson/immutable"
 	rbfcfg "github.com/gernest/u128/rbf/cfg"
 	"github.com/gernest/u128/rbf/syswrap"
 )
@@ -45,13 +44,13 @@ type txWaiter struct {
 type DB struct {
 	cfg rbfcfg.Config
 
-	data        []byte                               // database mmap
-	file        *os.File                             // database file descriptor
-	rootRecords *immutable.SortedMap[string, uint32] // cached root records
-	pageMap     *PageMap                             // pgno-to-WALID mapping
-	txs         map[*Tx]struct{}                     // active transactions
-	opened      bool                                 // true if open
-	logger      *slog.Logger                         // for diagnostics from async things
+	data        []byte           // database mmap
+	file        *os.File         // database file descriptor
+	rootRecords *Records         // cached root records
+	pageMap     *PageMap         // pgno-to-WALID mapping
+	txs         map[*Tx]struct{} // active transactions
+	opened      bool             // true if open
+	logger      *slog.Logger     // for diagnostics from async things
 
 	wal       []byte   // wal mmap
 	walFile   *os.File // wal file descriptor

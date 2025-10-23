@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/benbjohnson/immutable"
@@ -22,11 +21,11 @@ import (
 // view at the point-in-time they are started.
 type Tx struct {
 	mu          sync.RWMutex
-	db          *DB                                  // parent db
-	meta        [PageSize]byte                       // copy of current meta page
-	walID       int64                                // max WAL ID at start of tx
-	walPageN    int                                  // wal page count
-	rootRecords *immutable.SortedMap[string, uint32] // read-only cache of root records
+	db          *DB            // parent db
+	meta        [PageSize]byte // copy of current meta page
+	walID       int64          // max WAL ID at start of tx
+	walPageN    int            // wal page count
+	rootRecords *Records       // read-only cache of root records
 
 	// pageMap holds WAL pages that have not yet been transferred
 	// into the database pages. So it can be empty, if the whole previous
@@ -229,13 +228,13 @@ func (tx *Tx) rollback(hasDBLock bool) {
 }
 
 // Root returns the root page number for a bitmap. Returns 0 if the bitmap does not exist.
-func (tx *Tx) Root(name string) (uint32, error) {
+func (tx *Tx) Root(name Key) (uint32, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 	return tx.root(name)
 }
 
-func (tx *Tx) root(name string) (uint32, error) {
+func (tx *Tx) root(name Key) (uint32, error) {
 	// Fetch list of roots (or retrieve from cache).
 	records, err := tx.RootRecords()
 	if err != nil {
@@ -250,40 +249,17 @@ func (tx *Tx) root(name string) (uint32, error) {
 	return pgno, nil
 }
 
-// BitmapNames returns a list of all bitmap names.
-func (tx *Tx) BitmapNames() ([]string, error) {
-	tx.mu.RLock()
-	defer tx.mu.RUnlock()
-
-	if tx.db == nil {
-		return nil, ErrTxClosed
-	}
-
-	// Read list of root records.
-	records, err := tx.RootRecords()
-	if err != nil {
-		return nil, err
-	}
-
-	a := make([]string, 0, records.Len())
-	for itr := records.Iterator(); !itr.Done(); {
-		k, _, _ := itr.Next()
-		a = append(a, k)
-	}
-	return a, nil
-}
-
 // BitmapExist returns true if bitmap exists. Returns an error if name is empty.
-func (tx *Tx) BitmapExists(name string) (bool, error) {
+func (tx *Tx) BitmapExists(name Key) (bool, error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 	return tx.bitmapExists(name)
 }
 
-func (tx *Tx) bitmapExists(name string) (bool, error) {
+func (tx *Tx) bitmapExists(name Key) (bool, error) {
 	if tx.db == nil {
 		return false, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return false, ErrBitmapNameRequired
 	}
 
@@ -298,18 +274,18 @@ func (tx *Tx) bitmapExists(name string) (bool, error) {
 
 // CreateBitmap creates a new empty bitmap with the given name.
 // Returns an error if the bitmap already exists.
-func (tx *Tx) CreateBitmap(name string) error {
+func (tx *Tx) CreateBitmap(name Key) error {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 	return tx.createBitmap(name)
 }
 
-func (tx *Tx) createBitmap(name string) error {
+func (tx *Tx) createBitmap(name Key) error {
 	if tx.db == nil {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return ErrBitmapNameRequired
 	}
 
@@ -350,14 +326,14 @@ func (tx *Tx) createBitmap(name string) error {
 
 // CreateBitmapIfNotExists creates a new empty bitmap with the given name.
 // This is a no-op if the bitmap already exists.
-func (tx *Tx) CreateBitmapIfNotExists(name string) error {
+func (tx *Tx) CreateBitmapIfNotExists(name Key) error {
 	if err := tx.CreateBitmap(name); err != nil && err != ErrBitmapExists {
 		return err
 	}
 	return nil
 }
 
-func (tx *Tx) createBitmapIfNotExists(name string) error {
+func (tx *Tx) createBitmapIfNotExists(name Key) error {
 	if err := tx.createBitmap(name); err != nil && err != ErrBitmapExists {
 		return err
 	}
@@ -366,7 +342,7 @@ func (tx *Tx) createBitmapIfNotExists(name string) error {
 
 // DeleteBitmap removes a bitmap with the given name.
 // Returns an error if the bitmap does not exist.
-func (tx *Tx) DeleteBitmap(name string) error {
+func (tx *Tx) DeleteBitmap(name Key) error {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -374,7 +350,7 @@ func (tx *Tx) DeleteBitmap(name string) error {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return ErrBitmapNameRequired
 	}
 
@@ -404,49 +380,9 @@ func (tx *Tx) DeleteBitmap(name string) error {
 	return nil
 }
 
-// DeleteBitmapsWithPrefix removes all bitmaps with a given prefix.
-func (tx *Tx) DeleteBitmapsWithPrefix(prefix string) error {
-	tx.mu.Lock()
-	defer tx.mu.Unlock()
-
-	if tx.db == nil {
-		return ErrTxClosed
-	} else if !tx.writable {
-		return ErrTxNotWritable
-	}
-
-	// Read list of root records.
-	records, err := tx.RootRecords()
-	if err != nil {
-		return err
-	}
-
-	for itr := records.Iterator(); !itr.Done(); {
-		name, pgno, _ := itr.Next()
-
-		// Skip bitmaps without matching prefix.
-		if !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		// Deallocate all pages in the tree.
-		if err := tx.deallocateTree(pgno); err != nil {
-			return err
-		}
-
-		records = records.Delete(name)
-	}
-
-	// Rewrite record pages.
-	if err := tx.writeRootRecordPages(records); err != nil {
-		return fmt.Errorf("write bitmaps: %w", err)
-	}
-	tx.rootRecords = records
-	return nil
-}
-
 // RenameBitmap updates the name of an existing bitmap.
 // Returns an error if the bitmap does not exist.
-func (tx *Tx) RenameBitmap(oldname, newname string) error {
+func (tx *Tx) RenameBitmap(oldname, newname Key) error {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -454,7 +390,7 @@ func (tx *Tx) RenameBitmap(oldname, newname string) error {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if oldname == "" || newname == "" {
+	} else if oldname.IsEmpty() || newname.IsEmpty() {
 		return ErrBitmapNameRequired
 	}
 
@@ -481,12 +417,12 @@ func (tx *Tx) RenameBitmap(oldname, newname string) error {
 }
 
 // RootRecords returns a list of root records.
-func (tx *Tx) RootRecords() (records *immutable.SortedMap[string, uint32], err error) {
+func (tx *Tx) RootRecords() (records *Records, err error) {
 	if tx.rootRecords != nil {
 		return tx.rootRecords, nil
 	}
 
-	records = immutable.NewSortedMap[string, uint32](nil)
+	records = immutable.NewSortedMap[Key, uint32](CompareRecord{})
 	for pgno := readMetaRootRecordPageNo(tx.meta[:]); pgno != 0; {
 		page, _, err := tx.readPage(pgno)
 		if err != nil {
@@ -499,7 +435,7 @@ func (tx *Tx) RootRecords() (records *immutable.SortedMap[string, uint32], err e
 			return nil, err
 		}
 		for _, rec := range a {
-			records = records.Set(rec.Name, rec.Pgno)
+			records = records.Set(rec.Key(), rec.Page)
 		}
 
 		// Read next overflow page number.
@@ -512,7 +448,7 @@ func (tx *Tx) RootRecords() (records *immutable.SortedMap[string, uint32], err e
 }
 
 // writeRootRecordPages writes a list of root record pages.
-func (tx *Tx) writeRootRecordPages(records *immutable.SortedMap[string, uint32]) (err error) {
+func (tx *Tx) writeRootRecordPages(records *immutable.SortedMap[Key, uint32]) (err error) {
 	// Release all existing root record pages.
 	for pgno := readMetaRootRecordPageNo(tx.meta[:]); pgno != 0; {
 		page, _, err := tx.readPage(pgno)
@@ -570,7 +506,7 @@ func (tx *Tx) writeRootRecordPages(records *immutable.SortedMap[string, uint32])
 }
 
 // Add sets a given bit on the bitmap.
-func (tx *Tx) Add(name string, a ...uint64) (changeCount int, err error) {
+func (tx *Tx) Add(name Key, a ...uint64) (changeCount int, err error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -578,7 +514,7 @@ func (tx *Tx) Add(name string, a ...uint64) (changeCount int, err error) {
 		return 0, ErrTxClosed
 	} else if !tx.writable {
 		return 0, ErrTxNotWritable
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -603,7 +539,7 @@ func (tx *Tx) Add(name string, a ...uint64) (changeCount int, err error) {
 }
 
 // Remove unsets a given bit on the bitmap.
-func (tx *Tx) Remove(name string, a ...uint64) (changeCount int, err error) {
+func (tx *Tx) Remove(name Key, a ...uint64) (changeCount int, err error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -611,7 +547,7 @@ func (tx *Tx) Remove(name string, a ...uint64) (changeCount int, err error) {
 		return 0, ErrTxClosed
 	} else if !tx.writable {
 		return 0, ErrTxNotWritable
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -634,13 +570,13 @@ func (tx *Tx) Remove(name string, a ...uint64) (changeCount int, err error) {
 }
 
 // Contains returns true if the given bit is set on the bitmap.
-func (tx *Tx) Contains(name string, v uint64) (bool, error) {
+func (tx *Tx) Contains(name Key, v uint64) (bool, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
 	if tx.db == nil {
 		return false, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return false, ErrBitmapNameRequired
 	}
 
@@ -656,13 +592,13 @@ func (tx *Tx) Contains(name string, v uint64) (bool, error) {
 }
 
 // Depth returns the depth of the b-tree for a bitmap.
-func (tx *Tx) Depth(name string) (int, error) {
+func (tx *Tx) Depth(name Key) (int, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
 	if tx.db == nil {
 		return 0, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -681,16 +617,16 @@ func (tx *Tx) Depth(name string) (int, error) {
 }
 
 // Cursor returns an instance of a cursor this bitmap.
-func (tx *Tx) Cursor(name string) (*Cursor, error) {
+func (tx *Tx) Cursor(name Key) (*Cursor, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 	return tx.cursor(name)
 }
 
-func (tx *Tx) cursor(name string) (*Cursor, error) {
+func (tx *Tx) cursor(name Key) (*Cursor, error) {
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -717,13 +653,13 @@ func (tx *Tx) CursorFromRoot(root uint32) *Cursor {
 }
 
 // RoaringBitmap returns a bitmap as a Roaring bitmap.
-func (tx *Tx) RoaringBitmap(name string) (*roaring.Bitmap, error) {
+func (tx *Tx) RoaringBitmap(name Key) (*roaring.Bitmap, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -760,16 +696,16 @@ func (tx *Tx) RoaringBitmap(name string) (*roaring.Bitmap, error) {
 }
 
 // Container returns a Roaring container by key.
-func (tx *Tx) Container(name string, key uint64) (*roaring.Container, error) {
+func (tx *Tx) Container(name Key, key uint64) (*roaring.Container, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 	return tx.container(name, key)
 }
 
-func (tx *Tx) container(name string, key uint64) (*roaring.Container, error) {
+func (tx *Tx) container(name Key, key uint64) (*roaring.Container, error) {
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -796,14 +732,14 @@ func (tx *Tx) container(name string, key uint64) (*roaring.Container, error) {
 }
 
 // PutContainer inserts a container into a bitmap. Overwrites if key already exists.
-func (tx *Tx) PutContainer(name string, key uint64, ct *roaring.Container) error {
+func (tx *Tx) PutContainer(name Key, key uint64, ct *roaring.Container) error {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	return tx.putContainer(name, key, ct)
 }
 
-func (tx *Tx) putContainer(name string, key uint64, ct *roaring.Container) error {
+func (tx *Tx) putContainer(name Key, key uint64, ct *roaring.Container) error {
 	if tx.DeleteEmptyContainer && ct.N() == 0 {
 		return tx.removeContainer(name, key)
 	}
@@ -838,13 +774,13 @@ func (tx *Tx) putContainerWithCursor(cur *Cursor, key uint64, ct *roaring.Contai
 }
 
 // RemoveContainer removes a container from the bitmap by key.
-func (tx *Tx) RemoveContainer(name string, key uint64) error {
+func (tx *Tx) RemoveContainer(name Key, key uint64) error {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 	return tx.removeContainer(name, key)
 }
 
-func (tx *Tx) removeContainer(name string, key uint64) error {
+func (tx *Tx) removeContainer(name Key, key uint64) error {
 	c, err := tx.cursor(name)
 	if err == ErrBitmapNotFound {
 		return nil
@@ -1025,33 +961,6 @@ func (tx *Tx) inusePageSet() (map[uint32]struct{}, error) {
 	}
 
 	return m, errorList.Err()
-}
-
-// GetSizeBytesWithPrefix returns the size of bitmaps with a given key prefix.
-func (tx *Tx) GetSizeBytesWithPrefix(prefix string) (n uint64, err error) {
-	records, err := tx.RootRecords()
-	if err != nil {
-		return 0, err
-	}
-
-	// Loop over each bitmap in the database.
-	for itr := records.Iterator(); !itr.Done(); {
-		name, pgno, _ := itr.Next()
-
-		// Skip over any bitmaps that don't have a matching prefix.
-		if !strings.HasPrefix(name, prefix) {
-			continue
-		}
-
-		// Traverse the bitmap's b-tree and count the bytes for each page.
-		if err := tx.walkTree(pgno, 0, func(pgno, parent, typ uint32, err error) error {
-			n += PageSize
-			return err
-		}); err != nil {
-			return 0, err
-		}
-	}
-	return n, nil
 }
 
 // walkTree recursively iterates over a page and all its children.
@@ -1303,7 +1212,7 @@ func (tx *Tx) checkTxSize() error {
 	return nil
 }
 
-func (tx *Tx) AddRoaring(name string, bm *roaring.Bitmap) (changed bool, err error) {
+func (tx *Tx) AddRoaring(name Key, bm *roaring.Bitmap) (changed bool, err error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -1338,7 +1247,7 @@ func (tx *Tx) leafCellBitmapInto(pgno uint32, into []byte) (uint32, []uint64, er
 	return pgno, toArray64(into), err
 }
 
-func (tx *Tx) ContainerIterator(name string, key uint64) (citer roaring.ContainerIterator, found bool, err error) {
+func (tx *Tx) ContainerIterator(name Key, key uint64) (citer roaring.ContainerIterator, found bool, err error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1376,7 +1285,7 @@ func (c *Cursor) getContainerFilter(filter roaring.BitmapFilter, rewriter roarin
 	return f
 }
 
-func (tx *Tx) ApplyRewriter(name string, key uint64, rewriter roaring.BitmapRewriter) (err error) {
+func (tx *Tx) ApplyRewriter(name Key, key uint64, rewriter roaring.BitmapRewriter) (err error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
@@ -1394,7 +1303,7 @@ func (tx *Tx) ApplyRewriter(name string, key uint64, rewriter roaring.BitmapRewr
 	return c.ApplyRewriter(key, rewriter)
 }
 
-func (tx *Tx) ApplyFilter(name string, key uint64, filter roaring.BitmapFilter) (err error) {
+func (tx *Tx) ApplyFilter(name Key, key uint64, filter roaring.BitmapFilter) (err error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1408,7 +1317,7 @@ func (tx *Tx) ApplyFilter(name string, key uint64, filter roaring.BitmapFilter) 
 	return c.ApplyFilter(key, filter)
 }
 
-func (tx *Tx) Count(name string) (uint64, error) {
+func (tx *Tx) Count(name Key) (uint64, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1422,7 +1331,7 @@ func (tx *Tx) Count(name string) (uint64, error) {
 	return c.Count()
 }
 
-func (tx *Tx) Max(name string) (uint64, error) {
+func (tx *Tx) Max(name Key) (uint64, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1436,7 +1345,7 @@ func (tx *Tx) Max(name string) (uint64, error) {
 	return c.Max()
 }
 
-func (tx *Tx) Min(name string) (uint64, bool, error) {
+func (tx *Tx) Min(name Key) (uint64, bool, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1451,7 +1360,7 @@ func (tx *Tx) Min(name string) (uint64, bool, error) {
 }
 
 // roaring.countRange counts the number of bits set between [start, end).
-func (tx *Tx) CountRange(name string, start, end uint64) (uint64, error) {
+func (tx *Tx) CountRange(name Key, start, end uint64) (uint64, error) {
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
 
@@ -1465,7 +1374,7 @@ func (tx *Tx) CountRange(name string, start, end uint64) (uint64, error) {
 	return csr.CountRange(start, end)
 }
 
-func (tx *Tx) OffsetRange(name string, offset, start, endx uint64) (*roaring.Bitmap, error) {
+func (tx *Tx) OffsetRange(name Key, offset, start, endx uint64) (*roaring.Bitmap, error) {
 
 	tx.mu.RLock()
 	defer tx.mu.RUnlock()
@@ -1655,7 +1564,7 @@ func (si *emptyContainerIterator) Value() (uint64, *roaring.Container) {
 	return 0, nil
 }
 
-func (tx *Tx) ImportRoaringBits(name string, itr roaring.RoaringIterator, clear bool, log bool, rowSize uint64) (changed int, rowSet map[uint64]int, err error) {
+func (tx *Tx) ImportRoaringBits(name Key, itr roaring.RoaringIterator, clear bool, log bool, rowSize uint64) (changed int, rowSet map[uint64]int, err error) {
 	// begin write boilerplate
 	if tx.db == nil {
 		err = ErrTxClosed
@@ -1663,7 +1572,7 @@ func (tx *Tx) ImportRoaringBits(name string, itr roaring.RoaringIterator, clear 
 	} else if !tx.writable {
 		err = ErrTxNotWritable
 		return
-	} else if name == "" {
+	} else if name.IsEmpty() {
 		err = ErrBitmapNameRequired
 		return
 	}
@@ -1972,7 +1881,7 @@ func (tx *Tx) PageInfos() ([]PageInfo, error) {
 	}
 
 	// Traverse freelist and mark pages as in-use.
-	if err := tx.walkPageInfo(infos, metaInfo.FreelistPageNo, "freelist"); err != nil {
+	if err := tx.walkPageInfo(infos, metaInfo.FreelistPageNo, Key{}); err != nil {
 		errorList.Append(err)
 	}
 
@@ -2033,7 +1942,7 @@ func (tx *Tx) rootRecordPageInfo(pgno uint32) (*RootRecordPageInfo, error) {
 	}, nil
 }
 
-func (tx *Tx) walkPageInfo(infos []PageInfo, root uint32, name string) error {
+func (tx *Tx) walkPageInfo(infos []PageInfo, root uint32, name Key) error {
 	var errorList ErrorList
 
 	if err := tx.walkTree(root, 0, func(pgno, parent, typ uint32, err error) error {
@@ -2183,7 +2092,7 @@ type RootRecordPageInfo struct {
 type LeafPageInfo struct {
 	Pgno   uint32
 	Parent uint32
-	Tree   string
+	Tree   Key
 	Flags  uint32
 	CellN  int
 }
@@ -2191,7 +2100,7 @@ type LeafPageInfo struct {
 type BranchPageInfo struct {
 	Pgno   uint32
 	Parent uint32
-	Tree   string
+	Tree   Key
 	Flags  uint32
 	CellN  int
 }
@@ -2199,7 +2108,7 @@ type BranchPageInfo struct {
 type BitmapPageInfo struct {
 	Pgno   uint32
 	Parent uint32
-	Tree   string
+	Tree   Key
 }
 
 type FreePageInfo struct {
@@ -2223,7 +2132,7 @@ type MetaPage struct {
 
 type RootRecordPage struct {
 	*RootRecordPageInfo
-	Records []*RootRecord
+	Records []Record
 }
 
 type LeafPage struct {

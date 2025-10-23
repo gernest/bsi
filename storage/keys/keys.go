@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/gernest/u128/checksum"
 	"github.com/gernest/u128/storage/buffer"
 	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/prefix"
@@ -13,13 +14,10 @@ import (
 
 // common keys used in storage.
 var (
-	DataIndex   = []byte("d")
-	SearchIndex = []byte("s")
-
-	MetricsHistogram = []byte("h")
-	MetricsValue     = []byte("v")
-	MetricsTimestamp = []byte("t")
-	MetricsLabels    = []byte("l")
+	MetricsHistogram = checksum.Hash([]byte("\x00__metrics_histogram\x00"))
+	MetricsValue     = checksum.Hash([]byte("\x00__metrics_value\x00"))
+	MetricsTimestamp = checksum.Hash([]byte("\x00__metrics_timestamp\x00"))
+	MetricsLabels    = checksum.Hash([]byte("\x00__metrics_labels\x00"))
 )
 
 // View builds ISO 8601 year and week view. We encode year in 4 digits and week in two
