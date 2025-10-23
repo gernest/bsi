@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"slices"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
@@ -63,73 +64,80 @@ func (db *dbView) AllocateID(size uint64) (hi uint64, err error) {
 	return
 }
 
-// GetTSID creates or returns existing TSID from storage.
-func (db *dbView) GetTSID(out *tsid.ID, labels []byte) error {
+// GetTSID assigns tsid to labels .
+func (db *dbView) GetTSID(out *tsid.B, labels [][]byte) error {
+
+	// we make sure out.B has the same size as labels.
+	size := len(labels)
+	out.B = slices.Grow(out.B[:0], size)[:size]
+
 	return db.meta.Update(func(tx *bbolt.Tx) error {
 		metricsSumB := tx.Bucket(metricsSum)
-
-		// This is the heart and building block of everything. We rely on speed and
-		// cryptographic property to ensure series are correctly enumerated in each
-		// view.
-		sum := checksum.Hash(labels)
-		if got := metricsSumB.Get(sum[:]); got != nil {
-			// fast path: we have already processed labels in this view. We don't need
-			// to do any more work.
-			out.Decode(got)
-			return nil
-		}
-
-		out.Reset()
-		var err error
-		out.ID, err = metricsSumB.NextSequence()
-		if err != nil {
-			return fmt.Errorf("generating metrics sequence %w", err)
-		}
-
+		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
 
-		// Building index
-		for name, value := range buffer.RangeLabels(labels) {
-			labelNameB, err := searchIndexB.CreateBucketIfNotExists(name)
+		for i := range labels {
+			if i != 0 && bytes.Equal(labels[i], labels[i-1]) {
+				// fast path: ingesting same series with multiple samples.
+				out.B[i] = out.B[i-1]
+				continue
+			}
+			sum := checksum.Hash(labels[i])
+			if got := metricsSumB.Get(sum[:]); got != nil {
+				// fast path: we have already processed labels in this view. We don't need
+				// to do any more work.
+				out.B[i].Decode(got)
+				continue
+			}
+
+			// generate tsid
+			id := &out.B[i]
+			id.Reset()
+			var err error
+			id.ID, err = metricsSumB.NextSequence()
 			if err != nil {
-				return fmt.Errorf("creating label bucket %w", err)
-			}
-			if got := labelNameB.Get(value); got != nil {
-				// fast path: we already assigned unique id for label value
-				out.Views = append(out.Views, name)
-				out.Rows = append(out.Rows, binary.BigEndian.Uint64(got))
-			} else {
-				// slow path: assign unique id to value
-				nxt, err := labelNameB.NextSequence()
-				if err != nil {
-					return fmt.Errorf("assigning sequence id %w", err)
-				}
-				err = labelNameB.Put(value, binary.BigEndian.AppendUint64(nil, nxt))
-				if err != nil {
-					return fmt.Errorf("storing sequence id %w", err)
-				}
-				out.Views = append(out.Views, name)
-				out.Rows = append(out.Rows, nxt)
+				return fmt.Errorf("generating metrics sequence %w", err)
 			}
 
-		}
+			// Building index
+			for name, value := range buffer.RangeLabels(labels[i]) {
+				labelNameB, err := searchIndexB.CreateBucketIfNotExists(name)
+				if err != nil {
+					return fmt.Errorf("creating label bucket %w", err)
+				}
+				view := checksum.Hash(name)
 
-		// 1. encode tsid
-		buf := bytesPool.Get()
-		defer bytesPool.Put(buf)
-		out.Encode(buf)
+				if got := labelNameB.Get(value); got != nil {
+					// fast path: we already assigned unique id for label value
+					id.Views = append(id.Views, view)
+					id.Rows = append(id.Rows, binary.BigEndian.Uint64(got))
+				} else {
+					// slow path: assign unique id to value
+					nxt, err := labelNameB.NextSequence()
+					if err != nil {
+						return fmt.Errorf("assigning sequence id %w", err)
+					}
+					err = labelNameB.Put(value, binary.BigEndian.AppendUint64(nil, nxt))
+					if err != nil {
+						return fmt.Errorf("storing sequence id %w", err)
+					}
+					id.Views = append(id.Views, sum)
+					id.Rows = append(id.Rows, nxt)
+				}
 
-		// 2. store checksum => tsid in checksums bucket
-		err = metricsSumB.Put(sum[:], bytes.Clone(buf.B))
-		if err != nil {
-			return fmt.Errorf("storing metrics checksum %w", err)
-		}
+			}
 
-		// 3. store labels_sequence_id => labels_data in data bucket
-		dB := tx.Bucket(metricsData)
-		err = dB.Put(binary.BigEndian.AppendUint64(nil, out.ID), labels)
-		if err != nil {
-			return fmt.Errorf("storing metrics data %w", err)
+			// 2. store checksum => tsid in checksums bucket
+			err = metricsSumB.Put(sum[:], id.Encode())
+			if err != nil {
+				return fmt.Errorf("storing metrics checksum %w", err)
+			}
+
+			// 3. store labels_sequence_id => labels_data in data bucket
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID), labels[i])
+			if err != nil {
+				return fmt.Errorf("storing metrics data %w", err)
+			}
 		}
 		return nil
 	})
