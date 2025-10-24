@@ -9,7 +9,6 @@ require (
 	github.com/google/btree v1.1.3
 	github.com/minio/highwayhash v1.0.3
 	github.com/minio/minlz v1.0.1
-	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.307.1
 	github.com/stretchr/testify v1.11.1

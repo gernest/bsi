@@ -12,7 +12,6 @@ import (
 	"github.com/gernest/u128/storage/single"
 	"github.com/gernest/u128/storage/tsid"
 	"github.com/google/btree"
-	"go.etcd.io/bbolt"
 )
 
 var tsidPool tsid.Pool
@@ -21,6 +20,7 @@ var tsidPool tsid.Pool
 type Store struct {
 	dataPath string
 	db       single.Group[viewKey, *dbView, viewOption]
+	txt      single.Group[textKey, *txt, txtOptions]
 
 	tree struct {
 		mu    sync.RWMutex
@@ -32,6 +32,10 @@ type viewKey struct {
 	year uint16
 	week uint16
 }
+type Key struct {
+	year uint16
+	week uint16
+}
 
 type viewOption struct {
 	dataPath string
@@ -39,9 +43,7 @@ type viewOption struct {
 }
 
 func (v viewKey) String() string {
-	b := bytesPool.Get()
-	defer bytesPool.Put(b)
-	return string(keys.View(b, int(v.year), int(v.week)))
+	return keys.View(int(v.week), int(v.week))
 }
 
 // Init initializes store on dataPath.
@@ -74,6 +76,10 @@ func (db *Store) Init(dataPath string) error {
 		if err != nil {
 			return fmt.Errorf("parsing week for view %s %w", view, err)
 		}
+		if y == 0 && w == 0 {
+			// root view.
+			continue
+		}
 		db.tree.views.ReplaceOrInsert(viewKey{
 			year: uint16(y),
 			week: uint16(w),
@@ -82,7 +88,6 @@ func (db *Store) Init(dataPath string) error {
 
 	db.db.Init(func(vk viewKey, vo viewOption) (*dbView, error) {
 		base := filepath.Join(vo.dataPath, vk.String())
-		var createBuckets bool
 		if vo.write {
 			_, err := os.Stat(base)
 			if os.IsNotExist(err) {
@@ -90,7 +95,6 @@ func (db *Store) Init(dataPath string) error {
 				db.tree.mu.Lock()
 				db.tree.views.ReplaceOrInsert(vk)
 				db.tree.mu.Unlock()
-				createBuckets = true
 			}
 		}
 		err := os.MkdirAll(base, 0755)
@@ -102,53 +106,16 @@ func (db *Store) Init(dataPath string) error {
 		if err != nil {
 			return nil, fmt.Errorf("opening rbf database %w", err)
 		}
-		textPath := filepath.Join(base, "txt")
-		txt, err := bbolt.Open(textPath, 0600, nil)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("opening text database %w", err)
-		}
-		if createBuckets {
-			// opening write transaction is not cheap.  Create buckets only when we have to.
-			err = txt.Update(func(tx *bbolt.Tx) error {
-				_, err = tx.CreateBucket(metricsSum)
-				if err != nil {
-					return fmt.Errorf("creating sum bucket %w", err)
-				}
-				_, err = tx.CreateBucket(metricsData)
-				if err != nil {
-					return fmt.Errorf("creating data bucket %w", err)
-				}
-				_, err = tx.CreateBucket(histogramData)
-				if err != nil {
-					return fmt.Errorf("creating histogram bucket %w", err)
-				}
-				_, err = tx.CreateBucket(search)
-				if err != nil {
-					return fmt.Errorf("creating search bucket %w", err)
-				}
-				return nil
-			})
-			if err != nil {
-				txt.Close()
-				db.Close()
-				return nil, err
-			}
-		}
-		return &dbView{rbf: db, meta: txt}, nil
+		return &dbView{rbf: db}, nil
 	})
+	db.txt.Init(openTxt)
 	return nil
 }
 
 // AddRows index and store rows in the (year, week) view database.
 func (db *Store) AddRows(year, week int, rows *Rows) error {
-	da, done, err := db.db.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
-	if err != nil {
-		return fmt.Errorf("opening view database &w", err)
-	}
-	defer done.Close()
 
-	hi, err := da.AllocateID(uint64(len(rows.Timestamp)))
+	hi, err := db.allocate(uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
 	}
@@ -156,14 +123,14 @@ func (db *Store) AddRows(year, week int, rows *Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = da.GetTSID(ids, rows.Labels)
+	err = db.translateLabels(ids, year, week, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
 
 	for i := range rows.Histogram {
 		if len(rows.Histogram[i]) != 0 {
-			err = da.TranslateHistogram(rows.Value, rows.Histogram)
+			err = db.translateHistograms(rows.Value, year, week, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
@@ -178,5 +145,54 @@ func (db *Store) AddRows(year, week int, rows *Rows) error {
 		buildIndex(ma, &ids.B[i], start+uint64(i), rows.Timestamp[i], rows.Value[i], len(rows.Histogram) != 0)
 	}
 
+	return db.apply(year, week, ma)
+}
+
+func (db *Store) allocate(size uint64) (uint64, error) {
+	da, done, err := db.txt.Do(textKey{
+		column: keys.Root,
+	}, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return 0, err
+	}
+	defer done.Close()
+
+	return da.AllocateID(size)
+}
+
+func (db *Store) translateLabels(b *tsid.B, year, week int, labels [][]byte) error {
+	da, done, err := db.txt.Do(textKey{
+		column: keys.MetricsLabels,
+		year:   uint16(year),
+		week:   uint8(week),
+	}, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	return da.GetTSID(b, labels)
+}
+
+func (db *Store) translateHistograms(b []uint64, year, week int, data [][]byte) error {
+	da, done, err := db.txt.Do(textKey{
+		column: keys.MetricsHistogram,
+		year:   uint16(year),
+		week:   uint8(week),
+	}, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	return da.TranslateHistogram(b, data)
+}
+
+func (db *Store) apply(year, week int, ma rbf.Map) error {
+	da, done, err := db.db.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
+	if err != nil {
+		return fmt.Errorf("opening view database &w", err)
+	}
+	defer done.Close()
 	return da.Apply(ma)
 }
