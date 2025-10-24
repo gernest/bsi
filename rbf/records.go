@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"time"
 	"unsafe"
 
 	"github.com/benbjohnson/immutable"
@@ -20,6 +21,18 @@ type Records = immutable.SortedMap[Key, uint32]
 type View struct {
 	Year uint16
 	Week uint8
+}
+
+func ViewUnixMilli(t int64) View {
+	return ViewTS(time.UnixMilli(t))
+}
+
+func ViewTS(ts time.Time) View {
+	y, w := ts.ISOWeek()
+	return View{
+		Year: uint16(y),
+		Week: uint8(w),
+	}
 }
 
 func (v *View) Compare(other *View) int {

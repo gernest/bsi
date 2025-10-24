@@ -19,10 +19,6 @@ var viewSamplesPool = &sync.Pool{New: func() any {
 	return &ViewSamples{series: make(map[uint64]*roaring.Bitmap)}
 }}
 
-type rbfDB struct {
-	rbf *rbf.DB
-}
-
 func openRBF(path string, _ struct{}) (*rbf.DB, error) {
 	db := rbf.NewDB(path, nil)
 	err := db.Open()
@@ -30,29 +26,6 @@ func openRBF(path string, _ struct{}) (*rbf.DB, error) {
 		return nil, err
 	}
 	return db, nil
-}
-
-func (db *rbfDB) Close() error {
-	return db.rbf.Close()
-}
-
-// GetTSID assigns tsid to labels .
-
-// Apply implements DB.
-func (db *rbfDB) Apply(data rbf.Map) error {
-	tx, err := db.rbf.Begin(true)
-	if err != nil {
-		return fmt.Errorf("creating write transaction %w", err)
-	}
-	defer tx.Rollback()
-
-	for k, v := range data {
-		_, err := tx.AddRoaring(k, v)
-		if err != nil {
-			return fmt.Errorf("storing bitmap %v %w", k, err)
-		}
-	}
-	return nil
 }
 
 // ViewSamples collects all samples in a single view.
@@ -89,9 +62,9 @@ type Selector struct {
 }
 
 // Search all shards form matching data.
-func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Selector, union bool) error {
-
-	tx, err := db.rbf.Begin(false)
+func Search(result *ViewSamples, db *rbf.DB, startTs, endTs int64, selector Selector, union bool) error {
+	from, to := rbf.ViewUnixMilli(startTs), rbf.ViewUnixMilli(endTs)
+	tx, err := db.Begin(false)
 	if err != nil {
 		return fmt.Errorf("creating read transaction %w", err)
 	}
@@ -104,10 +77,15 @@ func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Sele
 	filters := make([]*roaring.Bitmap, 0, len(selector.Columns))
 	// Iterate over all shards for the timestamp column.
 	it := records.Iterator()
-	it.Seek(rbf.Key{Column: keys.MetricsTimestamp})
+
+	it.Seek(rbf.Key{Column: keys.MetricsTimestamp, View: from})
 	for {
 		name, page, ok := it.Next()
 		if !ok {
+			break
+		}
+		// Upper view is inclusive.
+		if name.View.Compare(&to) > 0 {
 			break
 		}
 		if !bytes.Equal(name.Column[:], keys.MetricsTimestamp[:]) {
@@ -126,7 +104,7 @@ func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Sele
 		filters = filters[:0]
 
 		for i := range selector.Columns {
-			pg, ok := records.Get(rbf.Key{Column: selector.Columns[i], Shard: name.Shard})
+			pg, ok := records.Get(rbf.Key{Column: selector.Columns[i], Shard: name.Shard, View: name.View})
 			if !ok {
 				filters = append(filters, roaring.NewBitmap())
 				continue
@@ -145,7 +123,6 @@ func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Sele
 			if len(filters) > 1 {
 				if union {
 					a.Freeze()
-					a.Union()
 					a.UnionInPlace(filters[1:]...)
 				} else {
 					for _, n := range filters[1:] {
@@ -162,6 +139,7 @@ func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Sele
 		if !ra.Any() {
 			continue
 		}
+
 		count := int(ra.Count())
 		offset := result.ts.Len()
 		ts := result.ts.Allocate(count)
