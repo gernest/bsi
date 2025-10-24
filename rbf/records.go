@@ -17,15 +17,31 @@ const recordSize = int(unsafe.Sizeof(Record{}))
 // Records holds immutable mapping of bitmap keys to root page number.
 type Records = immutable.SortedMap[Key, uint32]
 
+type View struct {
+	Year uint16
+	Week uint8
+}
+
+func (v *View) Compare(other *View) int {
+	i := cmp.Compare(v.Year, other.Year)
+	if i != 0 {
+		return i
+	}
+	return cmp.Compare(v.Week, other.Week)
+}
+
+func (v View) String() string {
+	return fmt.Sprintf("%04d_%02d", v.Year, v.Week)
+}
+
 type Key struct {
 	Column checksum.U128
 	Shard  uint64
-	Year   uint16
-	Week   uint8
+	View   View
 }
 
 func (k Key) String() string {
-	return fmt.Sprintf("%x_%d", k.Column, k.Shard)
+	return fmt.Sprintf("%s_%x_%d", k.View, k.Column, k.Shard)
 }
 
 var zero Key
@@ -47,8 +63,10 @@ func (r *Record) Key() Key {
 	return Key{
 		Column: r.Column,
 		Shard:  r.Shard,
-		Year:   r.Year,
-		Week:   r.Week,
+		View: View{
+			Year: r.Year,
+			Week: r.Week,
+		},
 	}
 }
 
@@ -81,11 +99,7 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := cmp.Compare(a.Year, b.Year)
-	if i != 0 {
-		return i
-	}
-	i = cmp.Compare(a.Week, b.Week)
+	i := a.View.Compare(&b.View)
 	if i != 0 {
 		return i
 	}
@@ -98,8 +112,8 @@ func (CompareRecord) Compare(a, b Key) int {
 
 type Map map[Key]*roaring.Bitmap
 
-func (r Map) Get(column checksum.U128, shard uint64) *roaring.Bitmap {
-	k := Key{Shard: shard, Column: column}
+func (r Map) Get(column checksum.U128, shard uint64, view View) *roaring.Bitmap {
+	k := Key{Shard: shard, Column: column, View: view}
 	x, ok := r[k]
 	if ok {
 		return x
