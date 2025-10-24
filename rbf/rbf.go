@@ -183,6 +183,8 @@ func writeRootRecords(page []byte, itr *immutable.SortedMapIterator[Key, uint32]
 			Page:   pgno,
 			Shard:  name.Shard,
 			Column: name.Column,
+			Year:   name.Year,
+			Week:   name.Week,
 		})
 		if err != nil {
 			itr.Seek(name)
