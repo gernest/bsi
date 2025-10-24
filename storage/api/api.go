@@ -49,7 +49,7 @@ func (w *appender) Commit() error {
 	defer w.set.Release()
 
 	for k, v := range w.set {
-		err := w.db.AddRows(k.Year, k.Week, v)
+		err := w.db.AddRows(k, v)
 		if err != nil {
 			return err
 		}

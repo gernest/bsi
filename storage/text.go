@@ -13,7 +13,7 @@ import (
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/checksum"
 	"github.com/gernest/u128/storage/buffer"
-	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/storage/rows"
 	"github.com/gernest/u128/storage/tsid"
 	"go.etcd.io/bbolt"
 )
@@ -30,8 +30,7 @@ var (
 
 type textKey struct {
 	column checksum.U128
-	year   uint16
-	week   uint8
+	view   rows.View
 }
 
 func (t textKey) String() string {
@@ -41,7 +40,7 @@ func (t textKey) String() string {
 func (t textKey) Path(base string) string {
 	return filepath.Join(
 		base,
-		keys.View(int(t.year), int(t.week)),
+		t.view.String(),
 		hex.EncodeToString(t.column[:]),
 	)
 }

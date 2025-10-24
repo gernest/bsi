@@ -20,27 +20,18 @@ var tsidPool tsid.Pool
 // Store implements timeseries database.
 type Store struct {
 	dataPath string
-	rbf      single.Group[viewKey, *rbfDB, viewOption]
+	rbf      single.Group[rows.View, *rbfDB, viewOption]
 	txt      single.Group[textKey, *txt, txtOptions]
 
 	tree struct {
 		mu    sync.RWMutex
-		views *btree.BTreeG[viewKey]
+		views *btree.BTreeG[rows.View]
 	}
-}
-
-type viewKey struct {
-	year uint16
-	week uint16
 }
 
 type viewOption struct {
 	dataPath string
 	write    bool
-}
-
-func (v viewKey) String() string {
-	return keys.View(int(v.week), int(v.week))
 }
 
 // Init initializes store on dataPath.
@@ -50,8 +41,8 @@ func (db *Store) Init(dataPath string) error {
 		return fmt.Errorf("setup data path %w", err)
 	}
 	db.dataPath = dataPath
-	db.tree.views = btree.NewG(8, func(a, b viewKey) bool {
-		return a.year < b.year && a.week < b.week
+	db.tree.views = btree.NewG(8, func(a, b rows.View) bool {
+		return a.Year < b.Year && a.Week < b.Week
 	})
 
 	// load all existing views in memory.
@@ -81,13 +72,13 @@ func (db *Store) Init(dataPath string) error {
 			// root view.
 			continue
 		}
-		db.tree.views.ReplaceOrInsert(viewKey{
-			year: uint16(y),
-			week: uint16(w),
+		db.tree.views.ReplaceOrInsert(rows.View{
+			Year: uint16(y),
+			Week: uint16(w),
 		})
 	}
 
-	db.rbf.Init(func(vk viewKey, vo viewOption) (*rbfDB, error) {
+	db.rbf.Init(func(vk rows.View, vo viewOption) (*rbfDB, error) {
 		base := filepath.Join(vo.dataPath, vk.String())
 		if vo.write {
 			_, err := os.Stat(base)
@@ -114,7 +105,7 @@ func (db *Store) Init(dataPath string) error {
 }
 
 // AddRows index and store rows in the (year, week) view database.
-func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
+func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	hi, err := db.allocate(uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
@@ -123,7 +114,7 @@ func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = db.translateLabels(ids, year, week, rows.Labels)
+	err = db.translateLabels(ids, view, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -138,17 +129,17 @@ func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
 		}
 		switch rows.Kind[i] {
 		case keys.Histogram:
-			err = db.translateHistograms(rows.Value, year, week, rows.Histogram)
+			err = db.translateHistograms(rows.Value, view, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
 		case keys.Exemplar:
-			err = db.translateExemplars(rows.Value, year, week, rows.Exemplar)
+			err = db.translateExemplars(rows.Value, view, rows.Exemplar)
 			if err != nil {
 				return fmt.Errorf("translating exemplars %w", err)
 			}
 		case keys.Metadata:
-			err = db.translateMetadata(rows.Value, year, week, rows.Metadata)
+			err = db.translateMetadata(rows.Value, view, rows.Metadata)
 			if err != nil {
 				return fmt.Errorf("translating metadata %w", err)
 			}
@@ -164,7 +155,7 @@ func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
 		buildIndex(ma, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
 	}
 
-	return db.apply(year, week, ma)
+	return db.apply(view, ma)
 }
 
 func (db *Store) allocate(size uint64) (uint64, error) {
@@ -179,11 +170,10 @@ func (db *Store) allocate(size uint64) (uint64, error) {
 	return da.AllocateID(size)
 }
 
-func (db *Store) translateLabels(b *tsid.B, year, week int, labels [][]byte) error {
+func (db *Store) translateLabels(b *tsid.B, view rows.View, labels [][]byte) error {
 	da, done, err := db.txt.Do(textKey{
 		column: keys.MetricsLabels,
-		year:   uint16(year),
-		week:   uint8(week),
+		view:   view,
 	}, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
@@ -193,11 +183,10 @@ func (db *Store) translateLabels(b *tsid.B, year, week int, labels [][]byte) err
 	return da.GetTSID(b, labels)
 }
 
-func (db *Store) translateHistograms(b []uint64, year, week int, data [][]byte) error {
+func (db *Store) translateHistograms(b []uint64, view rows.View, data [][]byte) error {
 	da, done, err := db.txt.Do(textKey{
 		column: keys.MetricsHistogram,
-		year:   uint16(year),
-		week:   uint8(week),
+		view:   view,
 	}, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
@@ -207,11 +196,10 @@ func (db *Store) translateHistograms(b []uint64, year, week int, data [][]byte) 
 	return da.TranslateHistogram(b, data)
 }
 
-func (db *Store) translateExemplars(b []uint64, year, week int, data [][]byte) error {
+func (db *Store) translateExemplars(b []uint64, view rows.View, data [][]byte) error {
 	da, done, err := db.txt.Do(textKey{
 		column: keys.MetricsExemplar,
-		year:   uint16(year),
-		week:   uint8(week),
+		view:   view,
 	}, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
@@ -221,11 +209,10 @@ func (db *Store) translateExemplars(b []uint64, year, week int, data [][]byte) e
 	return da.TranslateExemplar(b, data)
 }
 
-func (db *Store) translateMetadata(b []uint64, year, week int, data [][]byte) error {
+func (db *Store) translateMetadata(b []uint64, view rows.View, data [][]byte) error {
 	da, done, err := db.txt.Do(textKey{
 		column: keys.MetricsMetadata,
-		year:   uint16(year),
-		week:   uint8(week),
+		view:   view,
 	}, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
@@ -235,8 +222,8 @@ func (db *Store) translateMetadata(b []uint64, year, week int, data [][]byte) er
 	return da.TranslateMetadata(b, data)
 }
 
-func (db *Store) apply(year, week int, ma rbf.Map) error {
-	da, done, err := db.rbf.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
+func (db *Store) apply(view rows.View, ma rbf.Map) error {
+	da, done, err := db.rbf.Do(view, viewOption{dataPath: db.dataPath})
 	if err != nil {
 		return fmt.Errorf("opening view database %w", err)
 	}
