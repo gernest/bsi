@@ -166,7 +166,7 @@ func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Sele
 			return fmt.Errorf("reading sample timestamp %w", err)
 		}
 		labelsPage, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: name.Shard})
-		if err != nil {
+		if !ok {
 			return fmt.Errorf("missing sample labels bitmap")
 		}
 		err = readBSI(tx, labelsPage, name.Shard, ra, labels)

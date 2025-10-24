@@ -1,0 +1,35 @@
+package rows
+
+import (
+	"sync"
+)
+
+var rowsPool = &sync.Pool{New: func() any { return new(Rows) }}
+
+// View is ISO 8601 year and week
+type View struct {
+	Year, Week int
+}
+
+// Set stores rows categorized by views.
+type Set map[View]*Rows
+
+// Release returns rows to the pool.
+func (r Set) Release() {
+	for _, v := range r {
+		v.Reset()
+		rowsPool.Put(v)
+	}
+	clear(r)
+}
+
+// Get creates new rows or returns existing one for the (year, week) tuple.
+func (r Set) Get(year, week int) *Rows {
+	v := View{Year: year, Week: week}
+	x, ok := r[v]
+	if !ok {
+		x = rowsPool.Get().(*Rows)
+		r[v] = x
+	}
+	return x
+}

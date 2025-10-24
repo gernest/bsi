@@ -9,6 +9,7 @@ import (
 
 	"github.com/gernest/u128/rbf"
 	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/storage/rows"
 	"github.com/gernest/u128/storage/single"
 	"github.com/gernest/u128/storage/tsid"
 	"github.com/google/btree"
@@ -19,7 +20,7 @@ var tsidPool tsid.Pool
 // Store implements timeseries database.
 type Store struct {
 	dataPath string
-	db       single.Group[viewKey, *rbfDB, viewOption]
+	rbf      single.Group[viewKey, *rbfDB, viewOption]
 	txt      single.Group[textKey, *txt, txtOptions]
 
 	tree struct {
@@ -44,6 +45,10 @@ func (v viewKey) String() string {
 
 // Init initializes store on dataPath.
 func (db *Store) Init(dataPath string) error {
+	err := os.MkdirAll(dataPath, 0755)
+	if err != nil {
+		return fmt.Errorf("setup data path %w", err)
+	}
 	db.dataPath = dataPath
 	db.tree.views = btree.NewG(8, func(a, b viewKey) bool {
 		return a.year < b.year && a.week < b.week
@@ -82,7 +87,7 @@ func (db *Store) Init(dataPath string) error {
 		})
 	}
 
-	db.db.Init(func(vk viewKey, vo viewOption) (*rbfDB, error) {
+	db.rbf.Init(func(vk viewKey, vo viewOption) (*rbfDB, error) {
 		base := filepath.Join(vo.dataPath, vk.String())
 		if vo.write {
 			_, err := os.Stat(base)
@@ -109,8 +114,7 @@ func (db *Store) Init(dataPath string) error {
 }
 
 // AddRows index and store rows in the (year, week) view database.
-func (db *Store) AddRows(year, week int, rows *Rows) error {
-
+func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
 	hi, err := db.allocate(uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
@@ -185,7 +189,7 @@ func (db *Store) translateHistograms(b []uint64, year, week int, data [][]byte) 
 }
 
 func (db *Store) apply(year, week int, ma rbf.Map) error {
-	da, done, err := db.db.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
+	da, done, err := db.rbf.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
 	if err != nil {
 		return fmt.Errorf("opening view database &w", err)
 	}
