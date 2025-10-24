@@ -10,10 +10,22 @@ import (
 // common keys used in storage.
 var (
 	Root             = checksum.Hash([]byte("\x00__root\x00"))
+	MetricsType      = checksum.Hash([]byte("\x00__metrics_type\x00"))
 	MetricsHistogram = checksum.Hash([]byte("\x00__metrics_histogram\x00"))
+	MetricsExemplar  = checksum.Hash([]byte("\x00__metrics_exemplar\x00"))
+	MetricsMetadata  = checksum.Hash([]byte("\x00__metrics_metadata\x00"))
 	MetricsValue     = checksum.Hash([]byte("\x00__metrics_value\x00"))
 	MetricsTimestamp = checksum.Hash([]byte("\x00__metrics_timestamp\x00"))
 	MetricsLabels    = checksum.Hash([]byte("\x00__metrics_labels\x00"))
+)
+
+type Kind byte
+
+const (
+	Float Kind = iota + 1
+	Histogram
+	Exemplar
+	Metadata
 )
 
 // View builds ISO 8601 year and week view. We encode year in 4 digits and week in two

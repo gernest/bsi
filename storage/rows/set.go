@@ -2,6 +2,7 @@ package rows
 
 import (
 	"sync"
+	"time"
 )
 
 var rowsPool = &sync.Pool{New: func() any { return new(Rows) }}
@@ -21,6 +22,10 @@ func (r Set) Release() {
 		rowsPool.Put(v)
 	}
 	clear(r)
+}
+
+func (r Set) GetUnixMilli(ts int64) *Rows {
+	return r.Get(time.UnixMilli(ts).ISOWeek())
 }
 
 // Get creates new rows or returns existing one for the (year, week) tuple.

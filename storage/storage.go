@@ -128,21 +128,40 @@ func (db *Store) AddRows(year, week int, rows *rows.Rows) error {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
 
-	for i := range rows.Histogram {
-		if len(rows.Histogram[i]) != 0 {
+	seen := map[keys.Kind]bool{
+		keys.Float: true,
+	}
+
+	for i := range rows.Kind {
+		if seen[rows.Kind[i]] {
+			continue
+		}
+		switch rows.Kind[i] {
+		case keys.Histogram:
 			err = db.translateHistograms(rows.Value, year, week, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
-			break
+		case keys.Exemplar:
+			err = db.translateExemplars(rows.Value, year, week, rows.Exemplar)
+			if err != nil {
+				return fmt.Errorf("translating exemplars %w", err)
+			}
+		case keys.Metadata:
+			err = db.translateMetadata(rows.Value, year, week, rows.Metadata)
+			if err != nil {
+				return fmt.Errorf("translating metadata %w", err)
+			}
 		}
+		seen[rows.Kind[i]] = true
 	}
 
 	ma := make(rbf.Map)
 
 	start := hi - uint64(len(rows.Timestamp))
-	for i := range rows.Timestamp {
-		buildIndex(ma, &ids.B[i], start+uint64(i), rows.Timestamp[i], rows.Value[i], len(rows.Histogram) != 0)
+
+	for i, row := range rows.Range() {
+		buildIndex(ma, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
 	}
 
 	return db.apply(year, week, ma)
@@ -188,10 +207,38 @@ func (db *Store) translateHistograms(b []uint64, year, week int, data [][]byte) 
 	return da.TranslateHistogram(b, data)
 }
 
+func (db *Store) translateExemplars(b []uint64, year, week int, data [][]byte) error {
+	da, done, err := db.txt.Do(textKey{
+		column: keys.MetricsExemplar,
+		year:   uint16(year),
+		week:   uint8(week),
+	}, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	return da.TranslateExemplar(b, data)
+}
+
+func (db *Store) translateMetadata(b []uint64, year, week int, data [][]byte) error {
+	da, done, err := db.txt.Do(textKey{
+		column: keys.MetricsMetadata,
+		year:   uint16(year),
+		week:   uint8(week),
+	}, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	return da.TranslateMetadata(b, data)
+}
+
 func (db *Store) apply(year, week int, ma rbf.Map) error {
 	da, done, err := db.rbf.Do(viewKey{year: uint16(year), week: uint16(week)}, viewOption{dataPath: db.dataPath})
 	if err != nil {
-		return fmt.Errorf("opening view database &w", err)
+		return fmt.Errorf("opening view database %w", err)
 	}
 	defer done.Close()
 	return da.Apply(ma)

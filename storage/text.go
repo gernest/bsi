@@ -22,7 +22,9 @@ var (
 	admin         = []byte("admin")
 	metricsSum    = []byte("sum")
 	metricsData   = []byte("data")
-	histogramData = []byte("floats")
+	histogramData = []byte("histograms")
+	exemplarData  = []byte("exemplar")
+	metaData      = []byte("meta")
 	search        = []byte("index")
 )
 
@@ -81,6 +83,14 @@ func openTxt(key textKey, opts txtOptions) (*txt, error) {
 			_, err = tx.CreateBucket(histogramData)
 			if err != nil {
 				return fmt.Errorf("creating histogram bucket %w", err)
+			}
+			_, err = tx.CreateBucket(exemplarData)
+			if err != nil {
+				return fmt.Errorf("creating exemplar bucket %w", err)
+			}
+			_, err = tx.CreateBucket(metaData)
+			if err != nil {
+				return fmt.Errorf("creating metadata bucket %w", err)
 			}
 			_, err = tx.CreateBucket(search)
 			if err != nil {
@@ -191,22 +201,40 @@ func (t *txt) GetTSID(out *tsid.B, labels [][]byte) error {
 func (t *txt) TranslateHistogram(values []uint64, data [][]byte) error {
 	return t.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(histogramData)
-		for i := range data {
-			if len(data[i]) == 0 {
-				continue
-			}
-			nxt, err := b.NextSequence()
-			if err != nil {
-				return fmt.Errorf("assigning histogram sequence %w", err)
-			}
-			values[i] = nxt
-			err = b.Put(binary.BigEndian.AppendUint64(nil, nxt), data[i])
-			if err != nil {
-				return fmt.Errorf("storing histogram sequence %w", err)
-			}
-		}
-		return nil
+		return translate(b, values, data)
 	})
+}
+
+func (t *txt) TranslateExemplar(values []uint64, data [][]byte) error {
+	return t.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(exemplarData)
+		return translate(b, values, data)
+	})
+}
+
+func (t *txt) TranslateMetadata(values []uint64, data [][]byte) error {
+	return t.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(metaData)
+		return translate(b, values, data)
+	})
+}
+
+func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
+	for i := range data {
+		if len(data[i]) == 0 {
+			continue
+		}
+		nxt, err := b.NextSequence()
+		if err != nil {
+			return fmt.Errorf("assigning histogram sequence %w", err)
+		}
+		values[i] = nxt
+		err = b.Put(binary.BigEndian.AppendUint64(nil, nxt), data[i])
+		if err != nil {
+			return fmt.Errorf("storing histogram sequence %w", err)
+		}
+	}
+	return nil
 }
 
 func (t *txt) ReadLabels(all []uint64, cb func(id uint64, value []byte) error) error {

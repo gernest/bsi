@@ -12,7 +12,7 @@ import (
 var bytesPool buffer.Pool
 
 // buildIndex builds bitmap index for timeseries.
-func buildIndex(m rbf.Map, tsid *tsid.ID, id uint64, ts int64, value uint64, isHistogram bool) {
+func buildIndex(m rbf.Map, tsid *tsid.ID, id uint64, ts int64, value uint64, kind keys.Kind) {
 	shard := id / shardwidth.ShardWidth
 
 	// 1. store value
@@ -27,8 +27,8 @@ func buildIndex(m rbf.Map, tsid *tsid.ID, id uint64, ts int64, value uint64, isH
 	labelsB := m.Get(keys.MetricsLabels, shard)
 	bitmaps.BSI(labelsB, id, int64(tsid.ID))
 
-	histogramB := m.Get(keys.MetricsHistogram, shard)
-	bitmaps.Boolean(histogramB, id, isHistogram)
+	kindB := m.Get(keys.MetricsType, shard)
+	bitmaps.Mutex(kindB, id, uint64(kind))
 
 	// Create search index
 	for i := range tsid.Rows {
