@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"slices"
@@ -249,4 +250,57 @@ func (t *txt) ReadHistograms(all *roaring.Bitmap, cb func(id uint64, value []byt
 		}
 		return nil
 	})
+}
+
+func rangeSets(ra []uint64) iter.Seq2[uint64, uint64] {
+	return func(yield func(uint64, uint64) bool) {
+		start := uint64(0)
+		end := uint64(0)
+		for i := range ra {
+			v := ra[i]
+			if start == 0 {
+				start = v
+				end = v
+				continue
+			}
+			if v-end < 2 {
+				end = v
+				continue
+			}
+			if !yield(start, end) {
+				return
+			}
+			start = v
+			end = v
+		}
+		if start != 0 {
+			yield(start, end)
+		}
+	}
+}
+
+func rangeSetsRa(ra *roaring.Bitmap) iter.Seq2[uint64, uint64] {
+	return func(yield func(uint64, uint64) bool) {
+		start := uint64(0)
+		end := uint64(0)
+		for v := range ra.RangeAll() {
+			if start == 0 {
+				start = v
+				end = v
+				continue
+			}
+			if v-end < 2 {
+				end = v
+				continue
+			}
+			if !yield(start, end) {
+				return
+			}
+			start = v
+			end = v
+		}
+		if start != 0 {
+			yield(start, end)
+		}
+	}
 }
