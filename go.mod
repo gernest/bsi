@@ -9,7 +9,6 @@ require (
 	github.com/benbjohnson/immutable v0.4.3
 	github.com/felixge/fgprof v0.9.5
 	github.com/gernest/roaring v0.30.0
-	github.com/google/btree v1.1.3
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/minio/highwayhash v1.0.3
 	github.com/minio/minlz v1.0.1

@@ -23,6 +23,15 @@ type rbfDB struct {
 	rbf *rbf.DB
 }
 
+func openRBF(path string, _ struct{}) (*rbf.DB, error) {
+	db := rbf.NewDB(path, nil)
+	err := db.Open()
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 func (db *rbfDB) Close() error {
 	return db.rbf.Close()
 }
