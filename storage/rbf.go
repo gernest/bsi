@@ -20,20 +20,18 @@ var viewSamplesPool = &sync.Pool{New: func() any {
 	return &ViewSamples{series: make(map[uint64]*roaring.Bitmap)}
 }}
 
-// Unique ISO ISO 8601 (yer, week) tuple. Stores timeseries data using rbf for numerical
-// data and bolt for non numerical data.
-type dbView struct {
+type rbfDB struct {
 	rbf *rbf.DB
 }
 
-func (db *dbView) Close() error {
+func (db *rbfDB) Close() error {
 	return db.rbf.Close()
 }
 
 // GetTSID assigns tsid to labels .
 
 // Apply implements DB.
-func (db *dbView) Apply(data rbf.Map) error {
+func (db *rbfDB) Apply(data rbf.Map) error {
 	tx, err := db.rbf.Begin(true)
 	if err != nil {
 		return fmt.Errorf("creating write transaction %w", err)
@@ -83,7 +81,7 @@ type Selector struct {
 }
 
 // Search all shards form matching data.
-func (db *dbView) Search(result *ViewSamples, startTs, endTs int64, selector Selector, union bool) error {
+func (db *rbfDB) Search(result *ViewSamples, startTs, endTs int64, selector Selector, union bool) error {
 
 	tx, err := db.rbf.Begin(false)
 	if err != nil {

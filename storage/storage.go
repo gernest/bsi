@@ -19,7 +19,7 @@ var tsidPool tsid.Pool
 // Store implements timeseries database.
 type Store struct {
 	dataPath string
-	db       single.Group[viewKey, *dbView, viewOption]
+	db       single.Group[viewKey, *rbfDB, viewOption]
 	txt      single.Group[textKey, *txt, txtOptions]
 
 	tree struct {
@@ -29,10 +29,6 @@ type Store struct {
 }
 
 type viewKey struct {
-	year uint16
-	week uint16
-}
-type Key struct {
 	year uint16
 	week uint16
 }
@@ -86,7 +82,7 @@ func (db *Store) Init(dataPath string) error {
 		})
 	}
 
-	db.db.Init(func(vk viewKey, vo viewOption) (*dbView, error) {
+	db.db.Init(func(vk viewKey, vo viewOption) (*rbfDB, error) {
 		base := filepath.Join(vo.dataPath, vk.String())
 		if vo.write {
 			_, err := os.Stat(base)
@@ -106,7 +102,7 @@ func (db *Store) Init(dataPath string) error {
 		if err != nil {
 			return nil, fmt.Errorf("opening rbf database %w", err)
 		}
-		return &dbView{rbf: db}, nil
+		return &rbfDB{rbf: db}, nil
 	})
 	db.txt.Init(openTxt)
 	return nil
