@@ -182,30 +182,29 @@ func highBits(v uint64) uint64 { return v >> 16 }
 // BSI reads stored int64. We return uint64 because we store variety of integers in BSI fields. It is
 // up to the caller to cast to the desired type.
 // The returned slice has the same size and placement as filter.Slice().
-func (b *Extractor) BSI(r OffsetRanger, bitDepth uint8, shard uint64, filter *roaring.Bitmap) ([]uint64, error) {
-	result := make([]uint64, filter.Count())
+func (b *Extractor) BSI(r OffsetRanger, bitDepth uint8, shard uint64, filter *roaring.Bitmap, result []uint64) error {
 
 	exists, err := Row(r, shard, bsiExistsBit)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	exists = exists.Intersect(filter)
 	if !exists.Any() {
-		return result, nil
+		return nil
 	}
 
 	mergeBits(exists, 0, b.data)
 
 	sign, err := Row(r, shard, bsiSignBit)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	mergeBits(sign, 1<<63, b.data)
 
 	for i := range uint64(bitDepth) {
 		bits, err := Row(r, shard, bsiOffsetBit+i)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		bits = bits.Intersect(exists)
 		mergeBits(bits, 1<<i, b.data)
@@ -222,7 +221,7 @@ func (b *Extractor) BSI(r OffsetRanger, bitDepth uint8, shard uint64, filter *ro
 		i++
 	}
 	clear(b.data)
-	return result, nil
+	return nil
 }
 
 func mergeBits(ra *roaring.Bitmap, mask uint64, out map[uint64]uint64) {
