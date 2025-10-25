@@ -11,6 +11,7 @@ import (
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/checksum"
+	"github.com/gernest/u128/rbf"
 	"github.com/gernest/u128/storage/buffer"
 	"github.com/gernest/u128/storage/rows"
 	"github.com/gernest/u128/storage/tsid"
@@ -51,8 +52,8 @@ type txt struct {
 	db *bbolt.DB
 }
 
-func openTxt(key textKey, opts txtOptions) (*txt, error) {
-	file := key.Path(opts.dataPath)
+func openTxt(key rbf.View, opts txtOptions) (*txt, error) {
+	file := filepath.Join(opts.dataPath, key.String())
 	_, err := os.Stat(file)
 	created := os.IsNotExist(err)
 	db, err := bbolt.Open(file, 0600, nil)

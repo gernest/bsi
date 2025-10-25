@@ -2,7 +2,6 @@ package storage
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -20,18 +19,14 @@ func TestText(t *testing.T) {
 		switch td.Cmd {
 		case "open":
 			var (
-				lo, hi, year, week uint64
+				year, week uint64
 			)
-			td.ScanArgs(t, "lo", &lo)
-			td.ScanArgs(t, "hi", &hi)
 			td.ScanArgs(t, "year", &year)
 			td.ScanArgs(t, "week", &week)
-			k := textKey{view: rbf.View{
+			k := rbf.View{
 				Year: uint16(year),
 				Week: uint8(week),
-			}}
-			binary.BigEndian.PutUint64(k.column[:], lo)
-			binary.BigEndian.PutUint64(k.column[8:], hi)
+			}
 
 			db, err := openTxt(k, txtOptions{dataPath: t.TempDir()})
 			if err != nil {

@@ -17,7 +17,7 @@ var tsidPool tsid.Pool
 type Store struct {
 	dataPath string
 	rbf      single.Group[string, *rbf.DB, struct{}]
-	txt      single.Group[textKey, *txt, txtOptions]
+	txt      single.Group[rbf.View, *txt, txtOptions]
 }
 
 // Init initializes store on dataPath.
@@ -86,9 +86,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 }
 
 func (db *Store) allocate(size uint64) (uint64, error) {
-	da, done, err := db.txt.Do(textKey{
-		column: keys.Root,
-	}, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(rbf.View{}, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return 0, err
 	}
@@ -98,10 +96,7 @@ func (db *Store) allocate(size uint64) (uint64, error) {
 }
 
 func (db *Store) translateLabels(b *tsid.B, view rows.View, labels [][]byte) error {
-	da, done, err := db.txt.Do(textKey{
-		column: keys.MetricsLabels,
-		view:   view,
-	}, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
 	}
@@ -111,10 +106,7 @@ func (db *Store) translateLabels(b *tsid.B, view rows.View, labels [][]byte) err
 }
 
 func (db *Store) translateHistograms(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(textKey{
-		column: keys.MetricsHistogram,
-		view:   view,
-	}, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
 	}
@@ -124,10 +116,7 @@ func (db *Store) translateHistograms(b []uint64, view rows.View, data [][]byte) 
 }
 
 func (db *Store) translateExemplars(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(textKey{
-		column: keys.MetricsExemplar,
-		view:   view,
-	}, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
 	}
@@ -137,10 +126,7 @@ func (db *Store) translateExemplars(b []uint64, view rows.View, data [][]byte) e
 }
 
 func (db *Store) translateMetadata(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(textKey{
-		column: keys.MetricsMetadata,
-		view:   view,
-	}, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
 	if err != nil {
 		return err
 	}
