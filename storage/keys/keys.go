@@ -1,22 +1,21 @@
 package keys
 
 import (
-	"fmt"
-	"strconv"
+	"encoding/binary"
 
 	"github.com/gernest/u128/checksum"
 )
 
 // common keys used in storage.
 var (
-	Root             = checksum.Hash([]byte("\x00__root\x00"))
-	MetricsType      = checksum.Hash([]byte("\x00__metrics_type\x00"))
-	MetricsHistogram = checksum.Hash([]byte("\x00__metrics_histogram\x00"))
-	MetricsExemplar  = checksum.Hash([]byte("\x00__metrics_exemplar\x00"))
-	MetricsMetadata  = checksum.Hash([]byte("\x00__metrics_metadata\x00"))
-	MetricsValue     = checksum.Hash([]byte("\x00__metrics_value\x00"))
-	MetricsTimestamp = checksum.Hash([]byte("\x00__metrics_timestamp\x00"))
-	MetricsLabels    = checksum.Hash([]byte("\x00__metrics_labels\x00"))
+	Root             = sum(0)
+	MetricsType      = sum(1)
+	MetricsHistogram = sum(2)
+	MetricsExemplar  = sum(3)
+	MetricsMetadata  = sum(4)
+	MetricsValue     = sum(5)
+	MetricsTimestamp = sum(6)
+	MetricsLabels    = sum(7)
 )
 
 type Kind byte
@@ -28,18 +27,7 @@ const (
 	Metadata
 )
 
-// View builds ISO 8601 year and week view. We encode year in 4 digits and week in two
-// digits.
-func View(year, week int) string {
-	b := make([]byte, 6)
-	if year < 1000 {
-		_ = fmt.Appendf(b[:0], "%04d", year)
-	} else if year >= 10000 {
-		_ = fmt.Appendf(b[:0], "%04d", year%1000)
-	} else {
-		strconv.AppendInt(b[:0], int64(year), 10)
-	}
-	b[4] = '0' + byte(week/10)
-	b[5] = '0' + byte(week%10)
-	return string(b)
+func sum(lo uint64) (h checksum.U128) {
+	binary.BigEndian.PutUint64(h[8:], lo)
+	return
 }

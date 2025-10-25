@@ -3,6 +3,7 @@
         "Appendable",
         "Appender",
         "bbolt",
+        "datadriven",
         "gernest",
         "shardwidth",
         "TSID"

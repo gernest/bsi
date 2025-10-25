@@ -171,7 +171,7 @@ func (t *txt) GetTSID(out *tsid.B, labels [][]byte) error {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					id.Views = append(id.Views, sum)
+					id.Views = append(id.Views, view)
 					id.Rows = append(id.Rows, nxt)
 				}
 

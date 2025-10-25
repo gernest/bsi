@@ -3,6 +3,7 @@ package tsid
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"sync"
 
 	"github.com/gernest/u128/checksum"
@@ -43,6 +44,15 @@ type ID struct {
 	Views []checksum.U128
 	Rows  []uint64
 	ID    uint64
+}
+
+func (id ID) String() string {
+	var o bytes.Buffer
+	fmt.Fprintf(&o, "%d", id.ID)
+	for i := range id.Views {
+		fmt.Fprintf(&o, " %x=%d", id.Views[i], id.Rows[i])
+	}
+	return o.String()
 }
 
 func (id *ID) Reset() {
