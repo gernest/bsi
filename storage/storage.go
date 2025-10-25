@@ -31,7 +31,7 @@ func (db *Store) Init(dataPath string) error {
 	return nil
 }
 
-// AddRows index and store rows in the (year, week) view database.
+// AddRows index and store rows.
 func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	hi, err := db.allocate(uint64(len(rows.Timestamp)))
 	if err != nil {
