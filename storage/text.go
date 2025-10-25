@@ -95,7 +95,7 @@ func openTxt(key rbf.View, opts txtOptions) (*bbolt.DB, error) {
 	return db, nil
 }
 
-func AllocateID(db *bbolt.DB, size uint64) (hi uint64, err error) {
+func allocateRecordsID(db *bbolt.DB, size uint64) (hi uint64, err error) {
 	err = db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(admin)
 		o := b.Sequence()
@@ -108,9 +108,7 @@ func AllocateID(db *bbolt.DB, size uint64) (hi uint64, err error) {
 	return
 }
 
-// GetTSID assigns tsid to labels. We use u128 checksum to track processed labels.
-// This is resource intensive, slow path includes assigning ids for all label entries.
-func GetTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
+func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
 
 	// we make sure out.B has the same size as labels.
 	size := len(labels)
@@ -188,21 +186,21 @@ func GetTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
 	})
 }
 
-func TranslateHistogram(db *bbolt.DB, values []uint64, data [][]byte) error {
+func assignU64ToHistogams(db *bbolt.DB, values []uint64, data [][]byte) error {
 	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(histogramData)
 		return translate(b, values, data)
 	})
 }
 
-func TranslateExemplar(db *bbolt.DB, values []uint64, data [][]byte) error {
+func assignU64ToExemplars(db *bbolt.DB, values []uint64, data [][]byte) error {
 	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(exemplarData)
 		return translate(b, values, data)
 	})
 }
 
-func TranslateMetadata(db *bbolt.DB, values []uint64, data [][]byte) error {
+func assignU64ToMetadata(db *bbolt.DB, values []uint64, data [][]byte) error {
 	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(metaData)
 		return translate(b, values, data)
@@ -227,53 +225,47 @@ func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 	return nil
 }
 
-// ReadLabels reads encoded labels.Labels value from the storage. Labels are stored in
-// data bucket as (id, []byte) tuple. Here we search for all and call cb for every value
-// found.
-func ReadLabels(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+func readLabelsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 	return db.View(func(tx *bbolt.Tx) error {
-
-		cu := tx.Bucket(metricsData).Cursor()
-
-		var lo, hi [8]byte
-		for a, b := range rangeSetsRa(all) {
-			binary.BigEndian.PutUint64(lo[:], a)
-			binary.BigEndian.PutUint64(hi[:], b)
-
-			for k, v := cu.Seek(lo[:]); v != nil && bytes.Compare(k, hi[:]) < 1; k, v = cu.Next() {
-				key := binary.BigEndian.Uint64(k)
-				err := cb(key, v)
-				if err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return readFromU64(tx.Bucket(metricsData), all, cb)
 	})
 }
 
-// ReadHistograms reads histogram data from storage. all is a bitmap of histogram
-// ids, for each id found cb is called with the value. Callers must copy value slice
-// if they want to use it beyond this method scope.
-func ReadHistograms(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+func readHistogramsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 	return db.View(func(tx *bbolt.Tx) error {
+		return readFromU64(tx.Bucket(histogramData), all, cb)
+	})
+}
 
-		cu := tx.Bucket(histogramData).Cursor()
-		var lo, hi [8]byte
-		for a, b := range rangeSetsRa(all) {
-			binary.BigEndian.PutUint64(lo[:], a)
-			binary.BigEndian.PutUint64(hi[:], b)
+func readExemplarsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+	return db.View(func(tx *bbolt.Tx) error {
+		return readFromU64(tx.Bucket(exemplarData), all, cb)
+	})
+}
 
-			for k, v := cu.Seek(lo[:]); v != nil && bytes.Compare(k, hi[:]) < 1; k, v = cu.Next() {
-				key := binary.BigEndian.Uint64(k)
-				err := cb(key, v)
-				if err != nil {
-					return err
-				}
+func readMetadataFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+	return db.View(func(tx *bbolt.Tx) error {
+		return readFromU64(tx.Bucket(metaData), all, cb)
+	})
+}
+
+func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+
+	cu := b.Cursor()
+	var lo, hi [8]byte
+	for a, b := range rangeSetsRa(all) {
+		binary.BigEndian.PutUint64(lo[:], a)
+		binary.BigEndian.PutUint64(hi[:], b)
+
+		for k, v := cu.Seek(lo[:]); v != nil && bytes.Compare(k, hi[:]) < 1; k, v = cu.Next() {
+			key := binary.BigEndian.Uint64(k)
+			err := cb(key, v)
+			if err != nil {
+				return err
 			}
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 type Matchers struct {

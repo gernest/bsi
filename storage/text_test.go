@@ -51,7 +51,7 @@ func TestText(t *testing.T) {
 					ids := tsidPool.Get()
 					defer tsidPool.Put(ids)
 
-					err = GetTSID(db, ids, labels)
+					err = assignTSID(db, ids, labels)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)

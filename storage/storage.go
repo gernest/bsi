@@ -39,7 +39,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		return err
 	}
 	defer done.Close()
-	hi, err := AllocateID(da, uint64(len(rows.Timestamp)))
+	hi, err := allocateRecordsID(da, uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
 	}
@@ -47,7 +47,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = GetTSID(da, ids, rows.Labels)
+	err = assignTSID(da, ids, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -62,17 +62,17 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		}
 		switch rows.Kind[i] {
 		case keys.Histogram:
-			err = TranslateHistogram(da, rows.Value, rows.Histogram)
+			err = assignU64ToHistogams(da, rows.Value, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
 		case keys.Exemplar:
-			err = TranslateExemplar(da, rows.Value, rows.Exemplar)
+			err = assignU64ToExemplars(da, rows.Value, rows.Exemplar)
 			if err != nil {
 				return fmt.Errorf("translating exemplars %w", err)
 			}
 		case keys.Metadata:
-			err = TranslateMetadata(da, rows.Value, rows.Metadata)
+			err = assignU64ToMetadata(da, rows.Value, rows.Metadata)
 			if err != nil {
 				return fmt.Errorf("translating metadata %w", err)
 			}
