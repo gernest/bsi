@@ -8,7 +8,6 @@ import (
 
 // common keys used in storage.
 var (
-	Root             = sum(0)
 	MetricsTimestamp = sum(1)
 	MetricsHistogram = sum(2)
 	MetricsExemplar  = sum(3)

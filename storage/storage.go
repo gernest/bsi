@@ -33,7 +33,12 @@ func (db *Store) Init(dataPath string) error {
 
 // AddRows index and store rows.
 func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
-	hi, err := db.allocate(uint64(len(rows.Timestamp)))
+	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+	hi, err := da.AllocateID(uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
 	}
@@ -41,7 +46,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = db.translateLabels(ids, view, rows.Labels)
+	err = da.GetTSID(ids, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -56,17 +61,17 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		}
 		switch rows.Kind[i] {
 		case keys.Histogram:
-			err = db.translateHistograms(rows.Value, view, rows.Histogram)
+			err = da.TranslateHistogram(rows.Value, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
 		case keys.Exemplar:
-			err = db.translateExemplars(rows.Value, view, rows.Exemplar)
+			err = da.TranslateExemplar(rows.Value, rows.Exemplar)
 			if err != nil {
 				return fmt.Errorf("translating exemplars %w", err)
 			}
 		case keys.Metadata:
-			err = db.translateMetadata(rows.Value, view, rows.Metadata)
+			err = da.TranslateMetadata(rows.Value, rows.Metadata)
 			if err != nil {
 				return fmt.Errorf("translating metadata %w", err)
 			}
@@ -83,56 +88,6 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	}
 
 	return db.apply(ma)
-}
-
-func (db *Store) allocate(size uint64) (uint64, error) {
-	da, done, err := db.txt.Do(rbf.View{}, txtOptions{dataPath: db.dataPath})
-	if err != nil {
-		return 0, err
-	}
-	defer done.Close()
-
-	return da.AllocateID(size)
-}
-
-func (db *Store) translateLabels(b *tsid.B, view rows.View, labels [][]byte) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	return da.GetTSID(b, labels)
-}
-
-func (db *Store) translateHistograms(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	return da.TranslateHistogram(b, data)
-}
-
-func (db *Store) translateExemplars(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	return da.TranslateExemplar(b, data)
-}
-
-func (db *Store) translateMetadata(b []uint64, view rows.View, data [][]byte) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	return da.TranslateMetadata(b, data)
 }
 
 func (db *Store) apply(ma rbf.Map) error {
