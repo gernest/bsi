@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"iter"
 	"os"
@@ -40,8 +39,7 @@ func (t textKey) String() string {
 func (t textKey) Path(base string) string {
 	return filepath.Join(
 		base,
-		t.view.String(),
-		hex.EncodeToString(t.column[:]),
+		fmt.Sprintf("%s_%x", t.view, t.column),
 	)
 }
 
@@ -57,10 +55,6 @@ func openTxt(key textKey, opts txtOptions) (*txt, error) {
 	file := key.Path(opts.dataPath)
 	_, err := os.Stat(file)
 	created := os.IsNotExist(err)
-	err = os.MkdirAll(filepath.Dir(file), 0755)
-	if err != nil {
-		return nil, err
-	}
 	db, err := bbolt.Open(file, 0600, nil)
 	if err != nil {
 		return nil, err
