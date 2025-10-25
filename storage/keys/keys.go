@@ -9,12 +9,12 @@ import (
 // common keys used in storage.
 var (
 	Root             = sum(0)
-	MetricsType      = sum(1)
+	MetricsTimestamp = sum(1)
 	MetricsHistogram = sum(2)
 	MetricsExemplar  = sum(3)
 	MetricsMetadata  = sum(4)
 	MetricsValue     = sum(5)
-	MetricsTimestamp = sum(6)
+	MetricsType      = sum(6)
 	MetricsLabels    = sum(7)
 )
 
