@@ -113,6 +113,8 @@ func (t *txt) AllocateID(size uint64) (hi uint64, err error) {
 	return
 }
 
+// GetTSID assigns tsid to labels. We use u128 checksum to track processed labels.
+// This is resource intensive, slow path includes assigning ids for all label entries.
 func (t *txt) GetTSID(out *tsid.B, labels [][]byte) error {
 
 	// we make sure out.B has the same size as labels.
@@ -230,13 +232,16 @@ func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 	return nil
 }
 
-func (t *txt) ReadLabels(all []uint64, cb func(id uint64, value []byte) error) error {
+// ReadLabels reads encoded labels.Labels value from the storage. Labels are stored in
+// data bucket as (id, []byte) tuple. Here we search for all and call cb for every value
+// found.
+func (t *txt) ReadLabels(all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 	return t.db.View(func(tx *bbolt.Tx) error {
 
 		cu := tx.Bucket(metricsData).Cursor()
 
 		var lo, hi [8]byte
-		for a, b := range rangeSets(all) {
+		for a, b := range rangeSetsRa(all) {
 			binary.BigEndian.PutUint64(lo[:], a)
 			binary.BigEndian.PutUint64(hi[:], b)
 
@@ -252,6 +257,9 @@ func (t *txt) ReadLabels(all []uint64, cb func(id uint64, value []byte) error) e
 	})
 }
 
+// ReadHistograms reads histogram data from storage. all is a bitmap of histogram
+// ids, for each id found cb is called with the value. Callers must copy value slice
+// if they want to use it beyond this method scope.
 func (t *txt) ReadHistograms(all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 	return t.db.View(func(tx *bbolt.Tx) error {
 
@@ -271,33 +279,6 @@ func (t *txt) ReadHistograms(all *roaring.Bitmap, cb func(id uint64, value []byt
 		}
 		return nil
 	})
-}
-
-func rangeSets(ra []uint64) iter.Seq2[uint64, uint64] {
-	return func(yield func(uint64, uint64) bool) {
-		start := uint64(0)
-		end := uint64(0)
-		for i := range ra {
-			v := ra[i]
-			if start == 0 {
-				start = v
-				end = v
-				continue
-			}
-			if v-end < 2 {
-				end = v
-				continue
-			}
-			if !yield(start, end) {
-				return
-			}
-			start = v
-			end = v
-		}
-		if start != 0 {
-			yield(start, end)
-		}
-	}
 }
 
 func rangeSetsRa(ra *roaring.Bitmap) iter.Seq2[uint64, uint64] {
