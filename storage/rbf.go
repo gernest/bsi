@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"sync"
 
 	"github.com/gernest/roaring"
@@ -61,8 +60,21 @@ type Selector struct {
 	Negate  []bool
 }
 
-// Search all shards form matching data.
-func Search(result *ViewSamples, db *rbf.DB, startTs, endTs int64, selector Selector, union bool) error {
+// TimeRange contains results for columns satisfying time range constraint. We don't explicitly
+// store shards because we can derive it
+type TimeRange struct {
+	Views []rbf.View
+	Match []*roaring.Bitmap
+}
+
+// Reset clears t for reuse.
+func (t *TimeRange) Reset() {
+	t.Views = t.Views[:0]
+	t.Match = t.Match[:0]
+}
+
+// SearchTimeRange finds all columns matching startTs, endTs time range.
+func SearchTimeRange(result *TimeRange, db *rbf.DB, startTs, endTs int64) error {
 	from, to := rbf.ViewUnixMilli(startTs), rbf.ViewUnixMilli(endTs)
 	tx, err := db.Begin(false)
 	if err != nil {
@@ -74,10 +86,7 @@ func Search(result *ViewSamples, db *rbf.DB, startTs, endTs int64, selector Sele
 	if err != nil {
 		return fmt.Errorf("reading root records %w", err)
 	}
-	filters := make([]*roaring.Bitmap, 0, len(selector.Columns))
-	// Iterate over all shards for the timestamp column.
 	it := records.Iterator()
-
 	it.Seek(rbf.Key{Column: keys.MetricsTimestamp, View: from})
 	for {
 		name, page, ok := it.Next()
@@ -100,108 +109,22 @@ func Search(result *ViewSamples, db *rbf.DB, startTs, endTs int64, selector Sele
 			continue
 		}
 
-		// we have matching timestamp for the current shard. Try to apply the filters.
-		filters = filters[:0]
-
-		for i := range selector.Columns {
-			pg, ok := records.Get(rbf.Key{Column: selector.Columns[i], Shard: name.Shard, View: name.View})
-			if !ok {
-				filters = append(filters, roaring.NewBitmap())
-				continue
-			}
-			a, err := readMutexRows(tx, pg, name.Shard, selector.Rows[i])
-			if err != nil {
-				return fmt.Errorf("reading filter rows %w", err)
-			}
-			if selector.Negate[i] {
-				a = ra.Difference(a)
-			}
-			filters = append(filters, a)
-		}
-		if len(filters) > 0 {
-			a := filters[0]
-			if len(filters) > 1 {
-				if union {
-					a.Freeze()
-					a.UnionInPlace(filters[1:]...)
-				} else {
-					for _, n := range filters[1:] {
-						a = a.Intersect(n)
-					}
-				}
-			}
-
-			// ra acts as existence bitmap. By intersecting with filter we yiled
-			// columns which satisfies the filter that exists in the current shard.
-			ra = ra.Intersect(a)
-		}
-
 		if !ra.Any() {
 			continue
 		}
-
-		count := int(ra.Count())
-		offset := result.ts.Len()
-		ts := result.ts.Allocate(count)
-		result.labels.Reset()
-		labels := result.labels.Allocate(count)
-		values := result.values.Allocate(count)
-		histograms := result.histograms.Allocate(count)
-
-		err = readBSI(tx, page, name.Shard, ra, ts)
-		if err != nil {
-			return fmt.Errorf("reading sample timestamp %w", err)
+		if len(result.Match) == 0 {
+			result.Views = append(result.Views, name.View)
+			result.Match = append(result.Match, ra.Clone())
+			continue
 		}
-		labelsPage, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: name.Shard})
-		if !ok {
-			return fmt.Errorf("missing sample labels bitmap")
+		if result.Views[len(result.Views)-1].Compare(&name.View) == 0 {
+			result.Match[len(result.Views)-1] = result.Match[len(result.Views)-1].Union(ra)
+			continue
 		}
-		err = readBSI(tx, labelsPage, name.Shard, ra, labels)
-		if err != nil {
-			return fmt.Errorf("reading sample labels %w", err)
-		}
-		valuesPage, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: name.Shard})
-		if !ok {
-			return fmt.Errorf("missing sample values bitmap")
-		}
-		err = readBSI(tx, valuesPage, name.Shard, ra, values)
-		if err != nil {
-			return fmt.Errorf("reading sample values %w", err)
-		}
-		histogramPage, ok := records.Get(rbf.Key{Column: keys.MetricsHistogram, Shard: name.Shard})
-		if !ok {
-			return fmt.Errorf("missing sample histogram bitmap")
-		}
-		h, err := readHistogram(tx, histogramPage, name.Shard, ra, histograms)
-		if err != nil {
-			return fmt.Errorf("reading sample histograms %w", err)
-		}
-		if h != nil {
-			result.hasHistogram = result.hasHistogram.Union(ra)
-		}
-
-		for i := range ts {
-			sx, ok := result.series[labels[i]]
-			if !ok {
-				sx = roaring.NewBitmap()
-				result.series[labels[i]] = sx
-			}
-			sx.DirectAdd(uint64(offset) + uint64(i))
-		}
+		result.Views = append(result.Views, name.View)
+		result.Match = append(result.Match, ra.Clone())
 	}
 
-	if result.ts.Len() == 0 {
-		return nil
-	}
-
-	result.labels.Reset()
-	all := result.labels.Allocate(len(result.series))
-	all = all[:0]
-
-	for a := range result.series {
-		all = append(all, a)
-	}
-	slices.Sort(all)
 	return nil
 }
 
