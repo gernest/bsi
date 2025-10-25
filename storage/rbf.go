@@ -85,6 +85,31 @@ func (t *Selectors) append(view rbf.View, shard uint64, ra *roaring.Bitmap) {
 	t.Match[pos] = append(t.Match[pos], ra)
 }
 
+// StartTimestamp returns the first timestamp registered in the database.
+func StartTimestamp(db *rbf.DB) (int64, error) {
+	tx, err := db.Begin(false)
+	if err != nil {
+		return 0, fmt.Errorf("creating read transaction %w", err)
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return 0, fmt.Errorf("reading root records %w", err)
+	}
+	it := records.Iterator()
+	it.Seek(rbf.Key{Column: keys.MetricsTimestamp})
+	name, page, ok := it.Next()
+	if !ok {
+		return 0, nil
+	}
+	if !bytes.Equal(name.Column[:], keys.MetricsTimestamp[:]) {
+		return 0, nil
+	}
+	start, _, err := readBSIMin(tx, page, name.Shard, nil)
+	return start, nil
+}
+
 // SearchTimeRange finds all columns matching startTs, endTs time range.
 func SearchTimeRange(result *Selectors, db *rbf.DB, startTs, endTs int64) error {
 	from, to := rbf.ViewUnixMilli(startTs), rbf.ViewUnixMilli(endTs)
@@ -250,6 +275,20 @@ func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, resu
 	defer ex.Release()
 
 	return ex.BSI(cu, uint8(depth), shard, filter, result)
+}
+
+func readBSIMin(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap) (min int64, count uint64, err error) {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	// compute bit depth
+	mx, err := cu.Max()
+	if err != nil {
+		return 0, 0, fmt.Errorf("computing max value %w", err)
+	}
+	depth := mx / shardwidth.ShardWidth
+
+	return bitmaps.Min(cu, filter, shard, depth)
 }
 
 func readHistogram(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, result []bool) (*roaring.Bitmap, error) {
