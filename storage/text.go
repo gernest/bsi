@@ -50,11 +50,7 @@ type txtOptions struct {
 	dataPath string
 }
 
-type txt struct {
-	db *bbolt.DB
-}
-
-func openTxt(key rbf.View, opts txtOptions) (*txt, error) {
+func openTxt(key rbf.View, opts txtOptions) (*bbolt.DB, error) {
 	file := filepath.Join(opts.dataPath, key.String())
 	_, err := os.Stat(file)
 	created := os.IsNotExist(err)
@@ -96,15 +92,11 @@ func openTxt(key rbf.View, opts txtOptions) (*txt, error) {
 		})
 	}
 
-	return &txt{db: db}, nil
+	return db, nil
 }
 
-func (t *txt) Close() error {
-	return t.db.Close()
-}
-
-func (t *txt) AllocateID(size uint64) (hi uint64, err error) {
-	err = t.db.Update(func(tx *bbolt.Tx) error {
+func AllocateID(db *bbolt.DB, size uint64) (hi uint64, err error) {
+	err = db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(admin)
 		o := b.Sequence()
 		if o == 0 {
@@ -118,13 +110,13 @@ func (t *txt) AllocateID(size uint64) (hi uint64, err error) {
 
 // GetTSID assigns tsid to labels. We use u128 checksum to track processed labels.
 // This is resource intensive, slow path includes assigning ids for all label entries.
-func (t *txt) GetTSID(out *tsid.B, labels [][]byte) error {
+func GetTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
 
 	// we make sure out.B has the same size as labels.
 	size := len(labels)
 	out.B = slices.Grow(out.B[:0], size)[:size]
 
-	return t.db.Update(func(tx *bbolt.Tx) error {
+	return db.Update(func(tx *bbolt.Tx) error {
 		metricsSumB := tx.Bucket(metricsSum)
 		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
@@ -196,22 +188,22 @@ func (t *txt) GetTSID(out *tsid.B, labels [][]byte) error {
 	})
 }
 
-func (t *txt) TranslateHistogram(values []uint64, data [][]byte) error {
-	return t.db.Update(func(tx *bbolt.Tx) error {
+func TranslateHistogram(db *bbolt.DB, values []uint64, data [][]byte) error {
+	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(histogramData)
 		return translate(b, values, data)
 	})
 }
 
-func (t *txt) TranslateExemplar(values []uint64, data [][]byte) error {
-	return t.db.Update(func(tx *bbolt.Tx) error {
+func TranslateExemplar(db *bbolt.DB, values []uint64, data [][]byte) error {
+	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(exemplarData)
 		return translate(b, values, data)
 	})
 }
 
-func (t *txt) TranslateMetadata(values []uint64, data [][]byte) error {
-	return t.db.Update(func(tx *bbolt.Tx) error {
+func TranslateMetadata(db *bbolt.DB, values []uint64, data [][]byte) error {
+	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(metaData)
 		return translate(b, values, data)
 	})
@@ -238,8 +230,8 @@ func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 // ReadLabels reads encoded labels.Labels value from the storage. Labels are stored in
 // data bucket as (id, []byte) tuple. Here we search for all and call cb for every value
 // found.
-func (t *txt) ReadLabels(all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return t.db.View(func(tx *bbolt.Tx) error {
+func ReadLabels(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+	return db.View(func(tx *bbolt.Tx) error {
 
 		cu := tx.Bucket(metricsData).Cursor()
 
@@ -263,8 +255,8 @@ func (t *txt) ReadLabels(all *roaring.Bitmap, cb func(id uint64, value []byte) e
 // ReadHistograms reads histogram data from storage. all is a bitmap of histogram
 // ids, for each id found cb is called with the value. Callers must copy value slice
 // if they want to use it beyond this method scope.
-func (t *txt) ReadHistograms(all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return t.db.View(func(tx *bbolt.Tx) error {
+func ReadHistograms(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
+	return db.View(func(tx *bbolt.Tx) error {
 
 		cu := tx.Bucket(histogramData).Cursor()
 		var lo, hi [8]byte
@@ -305,8 +297,8 @@ func (m *Matchers) Any() bool {
 }
 
 // LabelMatchers finds rows matching matchers and write them to results.
-func (t *txt) LabelMatchers(result *Matchers, matches []*labels.Matcher) error {
-	return t.db.View(func(tx *bbolt.Tx) error {
+func LabelMatchers(db *bbolt.DB, result *Matchers, matches []*labels.Matcher) error {
+	return db.View(func(tx *bbolt.Tx) error {
 		searchB := tx.Bucket(search)
 
 		for _, l := range matches {

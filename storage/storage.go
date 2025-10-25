@@ -9,6 +9,7 @@ import (
 	"github.com/gernest/u128/storage/rows"
 	"github.com/gernest/u128/storage/single"
 	"github.com/gernest/u128/storage/tsid"
+	"go.etcd.io/bbolt"
 )
 
 var tsidPool tsid.Pool
@@ -17,7 +18,7 @@ var tsidPool tsid.Pool
 type Store struct {
 	dataPath string
 	rbf      single.Group[string, *rbf.DB, struct{}]
-	txt      single.Group[rbf.View, *txt, txtOptions]
+	txt      single.Group[rbf.View, *bbolt.DB, txtOptions]
 }
 
 // Init initializes store on dataPath.
@@ -38,7 +39,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		return err
 	}
 	defer done.Close()
-	hi, err := da.AllocateID(uint64(len(rows.Timestamp)))
+	hi, err := AllocateID(da, uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
 	}
@@ -46,7 +47,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = da.GetTSID(ids, rows.Labels)
+	err = GetTSID(da, ids, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -61,17 +62,17 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		}
 		switch rows.Kind[i] {
 		case keys.Histogram:
-			err = da.TranslateHistogram(rows.Value, rows.Histogram)
+			err = TranslateHistogram(da, rows.Value, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
 		case keys.Exemplar:
-			err = da.TranslateExemplar(rows.Value, rows.Exemplar)
+			err = TranslateExemplar(da, rows.Value, rows.Exemplar)
 			if err != nil {
 				return fmt.Errorf("translating exemplars %w", err)
 			}
 		case keys.Metadata:
-			err = da.TranslateMetadata(rows.Value, rows.Metadata)
+			err = TranslateMetadata(da, rows.Value, rows.Metadata)
 			if err != nil {
 				return fmt.Errorf("translating metadata %w", err)
 			}

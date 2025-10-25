@@ -35,7 +35,7 @@ func TestText(t *testing.T) {
 			}
 			defer db.Close()
 			var o bytes.Buffer
-			fmt.Fprintln(&o, filepath.Base(db.db.Path()))
+			fmt.Fprintln(&o, filepath.Base(db.Path()))
 			var labels [][]byte
 			for line := range strings.SplitSeq(td.Input, "\n") {
 				if strings.HasPrefix(line, "{") {
@@ -51,7 +51,7 @@ func TestText(t *testing.T) {
 					ids := tsidPool.Get()
 					defer tsidPool.Put(ids)
 
-					err = db.GetTSID(ids, labels)
+					err = GetTSID(db, ids, labels)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)
