@@ -13,8 +13,10 @@ import (
 	"github.com/gernest/u128/checksum"
 	"github.com/gernest/u128/rbf"
 	"github.com/gernest/u128/storage/buffer"
+	"github.com/gernest/u128/storage/magic"
 	"github.com/gernest/u128/storage/rows"
 	"github.com/gernest/u128/storage/tsid"
+	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )
 
@@ -277,6 +279,64 @@ func (t *txt) ReadHistograms(all *roaring.Bitmap, cb func(id uint64, value []byt
 					return err
 				}
 			}
+		}
+		return nil
+	})
+}
+
+type Matchers struct {
+	Columns []checksum.U128
+	Negate  []bool
+	Rows    []*roaring.Bitmap
+}
+
+// Any returns true if m conditions might match.
+func (m *Matchers) Any() bool {
+	// Prometheus labels matchers is an intersection of all condition. We can safely determine
+	// state of m that will never satisfy conditions without touching rbf.
+
+	for i := range m.Columns {
+		if !m.Negate[i] && !m.Rows[i].Any() {
+			// one of the condition is false. Intersection will always be false.
+			return false
+		}
+	}
+	return true
+}
+
+// LabelMatchers finds rows matching matchers and write them to results.
+func (t *txt) LabelMatchers(result *Matchers, matches []*labels.Matcher) error {
+	return t.db.View(func(tx *bbolt.Tx) error {
+		searchB := tx.Bucket(search)
+
+		for _, l := range matches {
+			col := checksum.Hash(magic.Slice(l.Name))
+			ra := roaring.NewBitmap()
+			var negate bool
+			switch l.Type {
+			case labels.MatchEqual, labels.MatchNotEqual:
+				negate = l.Type == labels.MatchNotEqual
+				b := searchB.Bucket(magic.Slice(l.Name))
+				if b != nil {
+					v := b.Get(magic.Slice(l.Value))
+					if v != nil {
+						ra.DirectAdd(binary.BigEndian.Uint64(v))
+					}
+				}
+			case labels.MatchRegexp, labels.MatchNotRegexp:
+				negate = l.Type == labels.MatchNotRegexp
+				b := searchB.Bucket(magic.Slice(l.Name))
+				if b != nil {
+					cu := b.Cursor()
+					prefix := magic.Slice(l.Prefix())
+					for k, v := cu.Seek(prefix); v != nil && bytes.HasPrefix(k, prefix); k, v = cu.Next() {
+						ra.DirectAdd(binary.BigEndian.Uint64(v))
+					}
+				}
+			}
+			result.Columns = append(result.Columns, col)
+			result.Negate = append(result.Negate, negate)
+			result.Rows = append(result.Rows, ra)
 		}
 		return nil
 	})

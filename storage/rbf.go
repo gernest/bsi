@@ -60,21 +60,33 @@ type Selector struct {
 	Negate  []bool
 }
 
-// TimeRange contains results for columns satisfying time range constraint. We don't explicitly
-// store shards because we can derive it
-type TimeRange struct {
-	Views []rbf.View
-	Match []*roaring.Bitmap
+// Selectors defines which columns  to read from rbf.
+type Selectors struct {
+	Views  []rbf.View
+	Shards [][]uint64
+	Match  [][]*roaring.Bitmap
 }
 
 // Reset clears t for reuse.
-func (t *TimeRange) Reset() {
+func (t *Selectors) Reset() {
 	t.Views = t.Views[:0]
+	t.Shards = t.Shards[:0]
 	t.Match = t.Match[:0]
 }
 
+func (t *Selectors) append(view rbf.View, shard uint64, ra *roaring.Bitmap) {
+	if len(t.Views) == 0 || t.Views[len(t.Views)-1].Compare(&view) != 0 {
+		t.Views = append(t.Views, view)
+		t.Shards = append(t.Shards, nil)
+		t.Match = append(t.Match, nil)
+	}
+	pos := len(t.Views) - 1
+	t.Shards[pos] = append(t.Shards[pos], shard)
+	t.Match[pos] = append(t.Match[pos], ra)
+}
+
 // SearchTimeRange finds all columns matching startTs, endTs time range.
-func SearchTimeRange(result *TimeRange, db *rbf.DB, startTs, endTs int64) error {
+func SearchTimeRange(result *Selectors, db *rbf.DB, startTs, endTs int64) error {
 	from, to := rbf.ViewUnixMilli(startTs), rbf.ViewUnixMilli(endTs)
 	tx, err := db.Begin(false)
 	if err != nil {
@@ -112,20 +124,101 @@ func SearchTimeRange(result *TimeRange, db *rbf.DB, startTs, endTs int64) error 
 		if !ra.Any() {
 			continue
 		}
-		if len(result.Match) == 0 {
-			result.Views = append(result.Views, name.View)
-			result.Match = append(result.Match, ra.Clone())
-			continue
-		}
-		if result.Views[len(result.Views)-1].Compare(&name.View) == 0 {
-			result.Match[len(result.Views)-1] = result.Match[len(result.Views)-1].Union(ra)
-			continue
-		}
-		result.Views = append(result.Views, name.View)
-		result.Match = append(result.Match, ra.Clone())
+
+		result.append(name.View, name.Shard, ra.Clone())
 	}
 
 	return nil
+}
+
+// SearchLabels reads matchers rbf indexes and applies them to selectors in result.
+func SearchLabels(result *Selectors, db *rbf.DB, matchers *Matchers) error {
+	if !matchers.Any() {
+		// fast patch: there is no way to satisfy labels conditions.
+		result.Reset()
+		return nil
+	}
+	tx, err := db.Begin(false)
+	if err != nil {
+		return fmt.Errorf("creating read transaction %w", err)
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return fmt.Errorf("reading root records %w", err)
+	}
+
+	for i := range result.Views {
+		view := result.Views[i]
+		for j := range result.Shards[i] {
+			shard := result.Shards[i][j]
+			ra := result.Match[i][j]
+			err = readFilters(tx, records, view, shard, matchers, func(m *roaring.Bitmap) error {
+				result.Match[i][j] = ra.Intersect(m.Clone())
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// SearchLabelsAny is like SearchLabels but uses union of matchers. Used for exemplars.
+func SearchLabelsAny(result *Selectors, db *rbf.DB, matchers []*Matchers) error {
+	tx, err := db.Begin(false)
+	if err != nil {
+		return fmt.Errorf("creating read transaction %w", err)
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return fmt.Errorf("reading root records %w", err)
+	}
+
+	for i := range result.Views {
+		view := result.Views[i]
+		for j := range result.Shards[i] {
+			shard := result.Shards[i][j]
+			ra := result.Match[i][j]
+			rx := roaring.NewBitmap()
+			for _, ma := range matchers {
+				err = readFilters(tx, records, view, shard, ma, func(m *roaring.Bitmap) error {
+					rx.UnionInPlace(m)
+					return nil
+				})
+			}
+			result.Match[i][j] = ra.Intersect(rx.Clone())
+		}
+	}
+	return nil
+}
+
+func readFilters(tx *rbf.Tx, records *rbf.Records, view rbf.View, shard uint64, ma *Matchers, cb func(m *roaring.Bitmap) error) error {
+	var ra *roaring.Bitmap
+	for i := range ma.Columns {
+		page, ok := records.Get(rbf.Key{Column: ma.Columns[i], Shard: shard, View: view})
+		if !ok {
+			return fmt.Errorf("missing page for column")
+		}
+		rx, err := readMutexRows(tx, page, shard, ma.Rows[i])
+		if err != nil {
+			return fmt.Errorf("reading labels rows %w", err)
+		}
+		if i == 0 {
+			ra = rx
+		} else {
+			ra = ra.Intersect(rx)
+		}
+		if !ra.Any() {
+			return cb(ra)
+		}
+
+	}
+	return cb(ra)
 }
 
 // readBSIRange performs a range search  in predicate...end bounds with upper bound being exclusive.
