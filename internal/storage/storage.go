@@ -139,7 +139,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	start := hi - uint64(len(rows.Timestamp))
 
 	for i, row := range rows.Range() {
-		buildIndex(ma, view, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
+		buildIndex(ma, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
 	}
 
 	return db.apply(view, ma)

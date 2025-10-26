@@ -305,12 +305,12 @@ func (db *Store) translateView(result *Samples, view rbf.View, offset int) error
 	})
 }
 
-func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, view rbf.View, shard uint64, match *roaring.Bitmap) error {
+func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 	offset := uint64(result.ts.Len())
 
 	{
 		// samples can only be from histogram or floats
-		root, ok := records.Get(rbf.Key{View: view, Column: keys.MetricsType, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
@@ -357,7 +357,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, view rbf.Vie
 
 	size := int(match.Count())
 	{
-		root, ok := records.Get(rbf.Key{View: view, Column: keys.MetricsTimestamp, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
@@ -368,7 +368,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, view rbf.Vie
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{View: view, Column: keys.MetricsLabels, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -379,7 +379,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, view rbf.Vie
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{View: view, Column: keys.MetricsValue, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}

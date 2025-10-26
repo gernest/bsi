@@ -62,11 +62,10 @@ func (v View) Path(base string) string {
 type Key struct {
 	Column checksum.U128
 	Shard  uint64
-	View   View
 }
 
 func (k Key) String() string {
-	return fmt.Sprintf("%s_%x_%d", k.View, k.Column, k.Shard)
+	return fmt.Sprintf("%x_%d", k.Column, k.Shard)
 }
 
 var zero Key
@@ -80,18 +79,12 @@ type Record struct {
 	Column checksum.U128
 	Shard  uint64
 	Page   uint32
-	Year   uint16
-	Week   uint8
 }
 
 func (r *Record) Key() Key {
 	return Key{
 		Column: r.Column,
 		Shard:  r.Shard,
-		View: View{
-			Year: r.Year,
-			Week: r.Week,
-		},
 	}
 }
 
@@ -124,11 +117,7 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := a.View.Compare(&b.View)
-	if i != 0 {
-		return i
-	}
-	i = bytes.Compare(a.Column[:], b.Column[:])
+	i := bytes.Compare(a.Column[:], b.Column[:])
 	if i != 0 {
 		return i
 	}
@@ -137,8 +126,8 @@ func (CompareRecord) Compare(a, b Key) int {
 
 type Map map[Key]*roaring.Bitmap
 
-func (r Map) Get(column checksum.U128, shard uint64, view View) *roaring.Bitmap {
-	k := Key{Shard: shard, Column: column, View: view}
+func (r Map) Get(column checksum.U128, shard uint64) *roaring.Bitmap {
+	k := Key{Shard: shard, Column: column}
 	x, ok := r[k]
 	if ok {
 		return x
