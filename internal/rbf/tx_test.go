@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/rbf"
+	"github.com/gernest/u128/internal/rbf"
 )
 
 func TestTx_CommitRollback(t *testing.T) {

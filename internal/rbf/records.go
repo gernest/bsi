@@ -10,7 +10,7 @@ import (
 
 	"github.com/benbjohnson/immutable"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/checksum"
+	"github.com/gernest/u128/internal/checksum"
 )
 
 const recordSize = int(unsafe.Sizeof(Record{}))

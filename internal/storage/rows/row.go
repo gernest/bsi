@@ -5,8 +5,8 @@ import (
 	"iter"
 	"math"
 
-	"github.com/gernest/u128/storage/buffer"
-	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/labels"
 )
 

@@ -10,12 +10,12 @@ import (
 	"slices"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/checksum"
-	"github.com/gernest/u128/rbf"
-	"github.com/gernest/u128/storage/buffer"
-	"github.com/gernest/u128/storage/magic"
-	"github.com/gernest/u128/storage/rows"
-	"github.com/gernest/u128/storage/tsid"
+	"github.com/gernest/u128/internal/checksum"
+	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/rows"
+	"github.com/gernest/u128/internal/storage/tsid"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )

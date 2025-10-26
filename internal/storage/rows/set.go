@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gernest/u128/rbf"
+	"github.com/gernest/u128/internal/rbf"
 )
 
 var rowsPool = &sync.Pool{New: func() any { return new(Rows) }}

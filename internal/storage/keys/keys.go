@@ -3,7 +3,7 @@ package keys
 import (
 	"encoding/binary"
 
-	"github.com/gernest/u128/checksum"
+	"github.com/gernest/u128/internal/checksum"
 )
 
 // common keys used in storage.

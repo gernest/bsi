@@ -6,9 +6,9 @@ import (
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
-	"github.com/gernest/u128/bitmaps"
-	"github.com/gernest/u128/rbf"
-	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/internal/bitmaps"
+	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/keys"
 )
 
 func openRBF(path string, _ struct{}) (*rbf.DB, error) {

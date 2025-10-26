@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gernest/u128/checksum"
-	"github.com/gernest/u128/storage/buffer"
-	"github.com/gernest/u128/storage/magic"
-	"github.com/gernest/u128/storage/prefix"
+	"github.com/gernest/u128/internal/checksum"
+	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/prefix"
 )
 
 var (

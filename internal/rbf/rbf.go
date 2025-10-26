@@ -18,7 +18,7 @@ import (
 	"github.com/benbjohnson/immutable"
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
-	"github.com/gernest/u128/rbf/vprint"
+	"github.com/gernest/u128/internal/rbf/vprint"
 )
 
 //go:generate protoc -I=./proto --go_out=./proto --go_opt=paths=source_relative ./proto/ql.proto

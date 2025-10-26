@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gernest/roaring"
-	rbfcfg "github.com/gernest/u128/rbf/cfg"
+	rbfcfg "github.com/gernest/u128/internal/rbf/cfg"
 )
 
 // util_test adds reusable utilities for testing.

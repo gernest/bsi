@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/rbf"
+	"github.com/gernest/u128/internal/rbf"
 	"github.com/stretchr/testify/assert"
 )
 

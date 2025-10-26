@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/checksum"
-	"github.com/gernest/u128/rbf/cfg"
+	"github.com/gernest/u128/internal/checksum"
+	"github.com/gernest/u128/internal/rbf/cfg"
 	"github.com/stretchr/testify/require"
 )
 

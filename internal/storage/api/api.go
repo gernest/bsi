@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	db "github.com/gernest/u128/storage"
-	"github.com/gernest/u128/storage/rows"
+	db "github.com/gernest/u128/internal/storage"
+	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"

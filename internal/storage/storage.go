@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gernest/u128/rbf"
-	"github.com/gernest/u128/storage/keys"
-	"github.com/gernest/u128/storage/rows"
-	"github.com/gernest/u128/storage/single"
-	"github.com/gernest/u128/storage/tsid"
+	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/keys"
+	"github.com/gernest/u128/internal/storage/rows"
+	"github.com/gernest/u128/internal/storage/single"
+	"github.com/gernest/u128/internal/storage/tsid"
 	"go.etcd.io/bbolt"
 )
 

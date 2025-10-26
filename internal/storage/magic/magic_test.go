@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/gernest/u128/checksum"
+	"github.com/gernest/u128/internal/checksum"
 	"github.com/stretchr/testify/require"
 )
 

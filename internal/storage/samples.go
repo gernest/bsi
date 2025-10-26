@@ -5,11 +5,11 @@ import (
 	"sync"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/checksum"
-	"github.com/gernest/u128/rbf"
-	"github.com/gernest/u128/storage/array"
-	"github.com/gernest/u128/storage/buffer"
-	"github.com/gernest/u128/storage/keys"
+	"github.com/gernest/u128/internal/checksum"
+	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/array"
+	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/keys"
 	"go.etcd.io/bbolt"
 )
 
