@@ -24,6 +24,12 @@ type View struct {
 	Week uint8
 }
 
+var zeroView View
+
+func (v View) IsEmpty() bool {
+	return v == zeroView
+}
+
 func ViewUnixMilli(t int64) View {
 	return ViewTS(time.UnixMilli(t))
 }

@@ -251,48 +251,6 @@ func (i *Iter) Err() error {
 	return nil
 }
 
-// ReadSamples sequentially reads samples based on selector.
-func (db *Store) ReadSamples(result *Samples, selector *Selectors) error {
-	// we only work with a single rbf transaction
-	da, done, err := db.rbf.Do(db.dataPath, struct{}{})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	tx, err := da.Begin(false)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	records, err := tx.RootRecords()
-	if err != nil {
-		return err
-	}
-	for i := range selector.Views {
-		view := selector.Views[i]
-		offset := result.ts.Len()
-		for j := range selector.Shards[i] {
-			shard := selector.Shards[i][j]
-			ra := selector.Match[i][j]
-			if !ra.Any() {
-				// fast path: nothing matches in the  current shard
-				continue
-			}
-			err = readSamples(result, tx, records, view, shard, ra)
-			if err != nil {
-				return err
-			}
-		}
-		err = db.translateView(result, view, offset)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (db *Store) translateView(result *Samples, view rbf.View, offset int) error {
 	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
 	if err != nil {

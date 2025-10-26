@@ -3,12 +3,16 @@ package storage
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/gernest/u128/internal/storage/single"
 	"github.com/gernest/u128/internal/storage/tsid"
+	"github.com/google/btree"
 	"go.etcd.io/bbolt"
 )
 
@@ -17,8 +21,11 @@ var tsidPool tsid.Pool
 // Store implements timeseries database.
 type Store struct {
 	dataPath string
-	rbf      single.Group[string, *rbf.DB, struct{}]
+	rbf      single.Group[rbf.View, *rbf.DB, dataPath]
 	txt      single.Group[rbf.View, *bbolt.DB, dataPath]
+
+	mu   sync.RWMutex
+	tree *btree.BTreeG[rbf.View]
 }
 
 // Init initializes store on dataPath.
@@ -27,14 +34,50 @@ func (db *Store) Init(dataPath string) error {
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
 	}
-	db.rbf.Init(openRBF)
+	db.rbf.Init(db.openRBF)
 	db.txt.Init(openTxt)
+
+	db.tree = btree.NewG(8, func(a, b rbf.View) bool {
+		return a.Compare(&b) < 0
+	})
+	all, err := os.ReadDir(dataPath)
+	if err != nil {
+		return err
+	}
+	for _, f := range all {
+		if !f.IsDir() {
+			continue
+		}
+		year, week, _ := strings.Cut(f.Name(), "_")
+		yy, err := strconv.Atoi(year)
+		if err != nil {
+			return fmt.Errorf("parsing year %w", err)
+		}
+		ww, err := strconv.Atoi(week)
+		if err != nil {
+			return fmt.Errorf("parsing week %w", err)
+		}
+		db.tree.ReplaceOrInsert(rbf.View{
+			Year: uint16(yy),
+			Week: uint8(ww),
+		})
+	}
 	return nil
 }
 
 // StartTime returns the minimum timestamp observed by the store.
 func (db *Store) StartTime() (int64, error) {
-	da, done, err := db.rbf.Do(db.dataPath, struct{}{})
+	db.mu.RLock()
+	var first rbf.View
+	db.tree.Ascend(func(item rbf.View) bool {
+		first = item
+		return false
+	})
+	db.mu.RUnlock()
+	if first.IsEmpty() {
+		return 0, nil
+	}
+	da, done, err := db.rbf.Do(first, dataPath{Path: db.dataPath})
 	if err != nil {
 		return 0, fmt.Errorf("opening view database %w", err)
 	}
@@ -99,11 +142,11 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		buildIndex(ma, view, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
 	}
 
-	return db.apply(ma)
+	return db.apply(view, ma)
 }
 
-func (db *Store) apply(ma rbf.Map) error {
-	da, done, err := db.rbf.Do(db.dataPath, struct{}{})
+func (db *Store) apply(view rbf.View, ma rbf.Map) error {
+	da, done, err := db.rbf.Do(view, dataPath{Path: db.dataPath})
 	if err != nil {
 		return fmt.Errorf("opening view database %w", err)
 	}

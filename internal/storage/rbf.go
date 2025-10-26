@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"fmt"
+	"os"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
@@ -11,13 +12,21 @@ import (
 	"github.com/gernest/u128/internal/storage/keys"
 )
 
-func openRBF(path string, _ struct{}) (*rbf.DB, error) {
-	db := rbf.NewDB(path, nil)
-	err := db.Open()
+func (db *Store) openRBF(key rbf.View, opts dataPath) (*rbf.DB, error) {
+	da := rbf.NewDB(key.Path(opts.Path), nil)
+	_, err := os.Stat(da.DataPath())
+	created := os.IsNotExist(err)
+	err = da.Open()
 	if err != nil {
 		return nil, err
 	}
-	return db, nil
+	if created {
+		// update our views tree
+		db.mu.Lock()
+		db.tree.ReplaceOrInsert(key)
+		db.mu.Unlock()
+	}
+	return da, nil
 }
 
 // Selectors defines which columns  to read from rbf.
