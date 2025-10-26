@@ -32,6 +32,17 @@ func (db *Store) Init(dataPath string) error {
 	return nil
 }
 
+// StartTime returns the minimum timestamp observed by the store.
+func (db *Store) StartTime() (int64, error) {
+	da, done, err := db.rbf.Do(db.dataPath, struct{}{})
+	if err != nil {
+		return 0, fmt.Errorf("opening view database %w", err)
+	}
+	defer done.Close()
+
+	return startTimestamp(da)
+}
+
 // AddRows index and store rows.
 func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})

@@ -45,8 +45,8 @@ func (t *Selectors) append(view rbf.View, shard uint64, ra *roaring.Bitmap) {
 	t.Match[pos] = append(t.Match[pos], ra)
 }
 
-// StartTimestamp returns the first timestamp registered in the database.
-func StartTimestamp(db *rbf.DB) (int64, error) {
+// startTimestamp returns the first timestamp registered in the database.
+func startTimestamp(db *rbf.DB) (int64, error) {
 	tx, err := db.Begin(false)
 	if err != nil {
 		return 0, fmt.Errorf("creating read transaction %w", err)
