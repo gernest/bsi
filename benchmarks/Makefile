@@ -62,7 +62,7 @@ tsbs-build:
 # Generate sample time series data
 tsbs-generate-data:
 	test -f $(TSBS_DATA_FILE) || /tmp/tsbs/bin/tsbs_generate_data \
-		--format=victoriametrics \
+		--format=prometheus \
 		--use-case=cpu-only  \
 		--seed=4318 \
 		--scale=$(TSBS_SCALE) \
