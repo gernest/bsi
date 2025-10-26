@@ -3,6 +3,7 @@
         "Appendable",
         "Appender",
         "bbolt",
+        "chunkenc",
         "datadriven",
         "gernest",
         "shardwidth",
