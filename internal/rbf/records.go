@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 	"unsafe"
 
@@ -44,7 +45,12 @@ func (v *View) Compare(other *View) int {
 }
 
 func (v View) String() string {
-	return fmt.Sprintf("%04d_%02d", v.Year, v.Week)
+	return v.Path("")
+}
+
+// Path returns path to the view directory.
+func (v View) Path(base string) string {
+	return filepath.Join(base, fmt.Sprintf("%04d_%02d", v.Year, v.Week))
 }
 
 type Key struct {

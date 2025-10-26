@@ -28,7 +28,7 @@ func TestText(t *testing.T) {
 				Week: uint8(week),
 			}
 
-			db, err := openTxt(k, txtOptions{dataPath: t.TempDir()})
+			db, err := openTxt(k, dataPath{Path: t.TempDir()})
 			if err != nil {
 				td.Fatalf(t, "failed opening text database %v", err)
 				return ""

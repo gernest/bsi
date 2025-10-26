@@ -18,7 +18,7 @@ var tsidPool tsid.Pool
 type Store struct {
 	dataPath string
 	rbf      single.Group[string, *rbf.DB, struct{}]
-	txt      single.Group[rbf.View, *bbolt.DB, txtOptions]
+	txt      single.Group[rbf.View, *bbolt.DB, dataPath]
 }
 
 // Init initializes store on dataPath.
@@ -45,7 +45,7 @@ func (db *Store) StartTime() (int64, error) {
 
 // AddRows index and store rows.
 func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
 	if err != nil {
 		return err
 	}

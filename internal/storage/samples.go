@@ -294,7 +294,7 @@ func (db *Store) ReadSamples(result *Samples, selector *Selectors) error {
 }
 
 func (db *Store) translateView(result *Samples, view rbf.View, offset int) error {
-	da, done, err := db.txt.Do(view, txtOptions{dataPath: db.dataPath})
+	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
 	if err != nil {
 		return err
 	}

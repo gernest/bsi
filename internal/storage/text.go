@@ -46,13 +46,17 @@ func (t textKey) Path(base string) string {
 	)
 }
 
-type txtOptions struct {
-	dataPath string
+type dataPath struct {
+	Path string
 }
 
-func openTxt(key rbf.View, opts txtOptions) (*bbolt.DB, error) {
-	file := filepath.Join(opts.dataPath, key.String())
-	_, err := os.Stat(file)
+func openTxt(key rbf.View, opts dataPath) (*bbolt.DB, error) {
+	file := filepath.Join(key.Path(opts.Path), "txt")
+	err := os.MkdirAll(filepath.Dir(file), 0755)
+	if err != nil {
+		return nil, err
+	}
+	_, err = os.Stat(file)
 	created := os.IsNotExist(err)
 	db, err := bbolt.Open(file, 0600, nil)
 	if err != nil {
