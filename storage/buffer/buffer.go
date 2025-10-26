@@ -22,3 +22,9 @@ func (p *Pool) Put(b *B) {
 type B struct {
 	B []byte
 }
+
+func (b *B) Own(data []byte) []byte {
+	off := len(b.B)
+	b.B = append(b.B, data...)
+	return b.B[off:]
+}

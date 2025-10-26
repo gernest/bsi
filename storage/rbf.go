@@ -3,20 +3,13 @@ package storage
 import (
 	"bytes"
 	"fmt"
-	"sync"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/gernest/u128/bitmaps"
-	"github.com/gernest/u128/checksum"
 	"github.com/gernest/u128/rbf"
-	"github.com/gernest/u128/storage/array"
 	"github.com/gernest/u128/storage/keys"
 )
-
-var viewSamplesPool = &sync.Pool{New: func() any {
-	return &ViewSamples{series: make(map[uint64]*roaring.Bitmap)}
-}}
 
 func openRBF(path string, _ struct{}) (*rbf.DB, error) {
 	db := rbf.NewDB(path, nil)
@@ -25,39 +18,6 @@ func openRBF(path string, _ struct{}) (*rbf.DB, error) {
 		return nil, err
 	}
 	return db, nil
-}
-
-// ViewSamples collects all samples in a single view.
-type ViewSamples struct {
-	labels       array.Uint64
-	ts           array.Uint64
-	values       array.Uint64
-	histograms   array.Bool
-	series       map[uint64]*roaring.Bitmap
-	seriesLabels [][]byte
-	histogram    map[uint64][]byte
-	hasHistogram *roaring.Bitmap
-}
-
-func (v *ViewSamples) Release() {
-	v.Reset()
-	viewSamplesPool.Put(v)
-}
-
-func (v *ViewSamples) Reset() {
-	v.labels.Reset()
-	v.ts.Reset()
-	v.values.Reset()
-	v.histograms.Reset()
-	clear(v.series)
-	clear(v.seriesLabels)
-	v.seriesLabels = v.seriesLabels[:0]
-}
-
-type Selector struct {
-	Columns []checksum.U128
-	Rows    []*roaring.Bitmap
-	Negate  []bool
 }
 
 // Selectors defines which columns  to read from rbf.
@@ -308,6 +268,19 @@ func readHistogram(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap
 		i++
 	}
 	return yes.Intersect(filter), nil
+}
+
+func readFloatOrHistMetricType(tx *rbf.Tx, root uint32, shard uint64) (float, hist *roaring.Bitmap, err error) {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	float, err = bitmaps.Row(cu, shard, uint64(keys.Float))
+	if err != nil {
+		return
+	}
+	hist, err = bitmaps.Row(cu, shard, uint64(keys.Histogram))
+	return
+
 }
 
 func readMutexRows(tx *rbf.Tx, root uint32, shard uint64, rows *roaring.Bitmap) (*roaring.Bitmap, error) {

@@ -225,30 +225,6 @@ func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 	return nil
 }
 
-func readLabelsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		return readFromU64(tx.Bucket(metricsData), all, cb)
-	})
-}
-
-func readHistogramsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		return readFromU64(tx.Bucket(histogramData), all, cb)
-	})
-}
-
-func readExemplarsFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		return readFromU64(tx.Bucket(exemplarData), all, cb)
-	})
-}
-
-func readMetadataFromU64(db *bbolt.DB, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		return readFromU64(tx.Bucket(metaData), all, cb)
-	})
-}
-
 func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 
 	cu := b.Cursor()
