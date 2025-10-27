@@ -200,7 +200,6 @@ func (b *Extractor) BSI(r OffsetRanger, bitDepth uint8, shard uint64, filter *ro
 		return err
 	}
 	mergeBits(sign, 1<<63, b.data)
-
 	for i := range uint64(bitDepth) {
 		bits, err := Row(r, shard, bsiOffsetBit+i)
 		if err != nil {
@@ -227,6 +226,7 @@ func (b *Extractor) BSI(r OffsetRanger, bitDepth uint8, shard uint64, filter *ro
 func mergeBits(ra *roaring.Bitmap, mask uint64, out map[uint64]uint64) {
 	itr := ra.Iterator()
 	itr.Seek(0)
+
 	for v, eof := itr.Next(); !eof; v, eof = itr.Next() {
 		out[v] |= mask
 	}
