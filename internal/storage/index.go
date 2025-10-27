@@ -25,7 +25,7 @@ func buildIndex(m rbf.Map, tsid *tsid.ID, id uint64, ts int64, value uint64, kin
 	bitmaps.BSI(labelsB, id, int64(tsid.ID))
 
 	kindB := m.Get(keys.MetricsType, shard)
-	bitmaps.Mutex(kindB, id, uint64(kind))
+	bitmaps.BSI(kindB, id, int64(kind))
 
 	// Create search index
 	for i := range tsid.Rows {
