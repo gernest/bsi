@@ -148,12 +148,13 @@ func (b *BSI) GetColumns(predicate int64) *roaring.Bitmap {
 	return ra
 }
 
-func (b *BSI) AsMap() (result map[uint64]uint64) {
+func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 	result = make(map[uint64]uint64)
-	mergeBits(b.exists, 0, result)
-	mergeBits(b.sign, 1<<63, result)
+	exists := b.exists.Intersect(filters)
+	mergeBits(exists, 0, result)
+	mergeBits(b.sign.Intersect(filters), 1<<63, result)
 	for i := range b.data {
-		mergeBits(b.data[i], 1<<i, result)
+		mergeBits(b.data[i].Intersect(exists), 1<<i, result)
 	}
 	for k, val := range result {
 		result[k] = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))

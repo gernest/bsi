@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gernest/roaring"
+	"github.com/gernest/u128/internal/bitmaps"
 	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/bsi"
@@ -256,10 +257,21 @@ func (db *Store) Select(start, end time.Time) storage.SeriesSet {
 	if v.IsEmpty() {
 		return storage.EmptySeriesSet()
 	}
-
 	result := NewSamples()
 	defer result.Release()
 
+	err := db.readTs(result, v, start.UnixMilli(), end.UnixMilli())
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	if v.IsEmpty() {
+		return storage.EmptySeriesSet()
+	}
+	err = db.applyTranslation(result, v)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
 	return result.Make()
 
 }
@@ -278,8 +290,21 @@ var viewsPool = &sync.Pool{New: func() any {
 	}
 }}
 
+func (v *views) At(pos int) rbf.View {
+	return rbf.View{
+		Year: v.year[pos], Week: v.week[pos],
+	}
+}
 func (v *views) IsEmpty() bool {
-	return len(v.year) == 0
+	if len(v.year) == 0 {
+		return true
+	}
+	for i := range v.columns {
+		if v.columns[i].Any() {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *views) Release() {
@@ -309,8 +334,84 @@ func (db *Store) selectViews(start, end time.Time) (v *views) {
 	return
 }
 
-// applies any translation to samples.
-func (db *Store) translateView(result *Samples, vs *views) error {
+func (db *Store) readTs(result *Samples, vs *views, start, end int64) error {
+	for i := range vs.columns {
+		err := db.readTsView(result, vs, i, start, end)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *Store) readTsView(result *Samples, vs *views, pos int, start, end int64) error {
+	da, done, err := db.rbf.Do(vs.At(pos), dataPath{Path: db.dataPath})
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	tx, err := da.Begin(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return err
+	}
+	it := records.Iterator()
+	it.Seek(rbf.Key{Column: keys.MetricsTimestamp})
+	for {
+		key, pg, ok := it.Next()
+		if !ok {
+			break
+		}
+		if !bytes.Equal(key.Column[:], keys.MetricsTimestamp[:]) {
+			break
+		}
+		ra, err := readBSIRange(tx, pg, key.Shard, bitmaps.BETWEEN, start, end)
+		if err != nil {
+			return err
+		}
+		if !ra.Any() {
+			continue
+		}
+
+		kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: key.Shard})
+		if !ok {
+			panic("missing metric type root records")
+		}
+
+		float, err := readBSIRange(tx, kind, key.Shard, bitmaps.EQ, int64(keys.Float), 0)
+		if err != nil {
+			return err
+		}
+		histogram, err := readBSIRange(tx, kind, key.Shard, bitmaps.EQ, int64(keys.Histogram), 0)
+		if err != nil {
+			return err
+		}
+		ra = ra.Intersect(float.Union(histogram))
+		if !ra.Any() {
+			continue
+		}
+		err = readSamples(result, tx, records, key.Shard, ra)
+		if err != nil {
+			return err
+		}
+
+		// translations are delayed until we have read all rbf data. Since translation
+		// is view scoped, we tract all matched columns in the view to later filter what
+		// columns we translate in a view scope.
+		// Clone ensure we have valid containers past this transaction.
+		vs.columns[pos].UnionInPlace(ra.Clone())
+
+	}
+	return nil
+}
+
+func (db *Store) applyTranslation(result *Samples, vs *views) error {
 
 	local := map[uint64][]byte{}
 	var b [8]byte
@@ -337,21 +438,22 @@ func (db *Store) translateView(result *Samples, vs *views) error {
 		if !vs.columns[i].Any() {
 			continue
 		}
+		co := vs.columns[i]
 		da, done, err := db.txt.Do(rbf.View{Year: vs.year[i], Week: vs.week[i]}, dataPath{Path: db.dataPath})
 		if err != nil {
 			return err
 		}
 		err = da.View(func(tx *bbolt.Tx) error {
 			if ra := result.kind.GetColumns(int64(keys.Histogram)); ra.Any() {
-				readData(tx, histogramData, ra)
+				readData(tx, histogramData, ra.Intersect(co))
 			}
 			if ra := result.kind.GetColumns(int64(keys.Exemplar)); ra.Any() {
-				readData(tx, exemplarData, ra)
+				readData(tx, exemplarData, ra.Intersect(co))
 			}
 			if ra := result.kind.GetColumns(int64(keys.Metadata)); ra.Any() {
-				readData(tx, metaData, ra)
+				readData(tx, metaData, ra.Intersect(co))
 			}
-			series := result.labels.AsMap()
+			series := result.labels.AsMap(co)
 			clear(v2Columns)
 			ra.Containers.Reset()
 			for k, v := range series {
