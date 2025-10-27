@@ -80,8 +80,7 @@ func startTimestamp(db *rbf.DB) (int64, error) {
 	return start, nil
 }
 
-// readBSIRange performs a range search  in predicate...end bounds with upper bound being exclusive.
-func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, predicate, end int64) (*roaring.Bitmap, error) {
+func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, op bitmaps.OP, predicate, end int64) (*roaring.Bitmap, error) {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
 
@@ -91,7 +90,7 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, predicate, end int64) (
 		return nil, fmt.Errorf("computing max value %w", err)
 	}
 	depth := mx / shardwidth.ShardWidth
-	return bitmaps.Range(cu, bitmaps.BETWEEN, shard, depth, predicate, end)
+	return bitmaps.Range(cu, op, shard, depth, predicate, end)
 }
 
 func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, result *bsi.BSI) error {
