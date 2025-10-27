@@ -71,7 +71,12 @@ func (db *Store) Init(dataPath string) error {
 	return nil
 }
 
-// StartTime returns the minimum timestamp observed by the store.
+// Close implements storage.Storage.
+func (db *Store) Close() error {
+	return db.seq.Close()
+}
+
+// StartTime implements storage.Storage.
 func (db *Store) StartTime() (int64, error) {
 	db.mu.RLock()
 	var first rbf.View
