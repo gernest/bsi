@@ -120,8 +120,10 @@ func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 }
 
 // GetColumns returns al columns with given predicate.
-func (b *BSI) GetColumns(predicate int64) *roaring.Bitmap {
-	if !b.exists.Any() {
+func (b *BSI) GetColumns(predicate int64, filter *roaring.Bitmap) *roaring.Bitmap {
+
+	exists := b.exists.Intersect(filter)
+	if !exists.Any() {
 		return roaring.NewBitmap()
 	}
 	unsignedPredicate := absInt64(predicate)
@@ -129,23 +131,22 @@ func (b *BSI) GetColumns(predicate int64) *roaring.Bitmap {
 		// Predicate is out of range.
 		return roaring.NewBitmap()
 	}
-	ra := b.exists.Clone()
 	if predicate < 0 {
-		ra = ra.Intersect(b.sign) // only negatives
+		exists = exists.Intersect(b.sign) // only negatives
 	} else {
-		ra = ra.Difference(b.sign) // only positives
+		exists = exists.Difference(b.sign) // only positives
 	}
 	for i := range b.data {
 		row := b.data[i]
 		bit := (unsignedPredicate >> uint(i)) & 1
 
 		if bit == 1 {
-			ra = ra.Intersect(row)
+			exists = exists.Intersect(row)
 		} else {
-			ra = ra.Difference(row)
+			exists = exists.Difference(row)
 		}
 	}
-	return ra
+	return exists
 }
 
 func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {

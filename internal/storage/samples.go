@@ -444,14 +444,14 @@ func (db *Store) applyTranslation(result *Samples, vs *views) error {
 			return err
 		}
 		err = da.View(func(tx *bbolt.Tx) error {
-			if ra := result.kind.GetColumns(int64(keys.Histogram)); ra.Any() {
-				readData(tx, histogramData, ra.Intersect(co))
+			if ra := result.kind.GetColumns(int64(keys.Histogram), co); ra.Any() {
+				readData(tx, histogramData, ra)
 			}
-			if ra := result.kind.GetColumns(int64(keys.Exemplar)); ra.Any() {
-				readData(tx, exemplarData, ra.Intersect(co))
+			if ra := result.kind.GetColumns(int64(keys.Exemplar), co); ra.Any() {
+				readData(tx, exemplarData, ra)
 			}
-			if ra := result.kind.GetColumns(int64(keys.Metadata)); ra.Any() {
-				readData(tx, metaData, ra.Intersect(co))
+			if ra := result.kind.GetColumns(int64(keys.Metadata), co); ra.Any() {
+				readData(tx, metaData, ra)
 			}
 			series := result.labels.AsMap(co)
 			clear(v2Columns)
