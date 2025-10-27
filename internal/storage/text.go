@@ -99,19 +99,6 @@ func openTxt(key rbf.View, opts dataPath) (*bbolt.DB, error) {
 	return db, nil
 }
 
-func allocateRecordsID(db *bbolt.DB, size uint64) (hi uint64, err error) {
-	err = db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(admin)
-		o := b.Sequence()
-		if o == 0 {
-			o++
-		}
-		hi = o + size
-		return b.SetSequence(hi)
-	})
-	return
-}
-
 func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
 
 	// we make sure out.B has the same size as labels.

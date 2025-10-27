@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/rows"
+	"github.com/gernest/u128/internal/storage/seq"
 	"github.com/gernest/u128/internal/storage/single"
 	"github.com/gernest/u128/internal/storage/tsid"
 	"github.com/google/btree"
@@ -26,6 +28,8 @@ type Store struct {
 
 	mu   sync.RWMutex
 	tree *btree.BTreeG[rbf.View]
+
+	seq seq.Seq
 }
 
 // Init initializes store on dataPath.
@@ -33,6 +37,10 @@ func (db *Store) Init(dataPath string) error {
 	err := os.MkdirAll(dataPath, 0755)
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
+	}
+	err = db.seq.Init(filepath.Join(dataPath, "seq"))
+	if err != nil {
+		return fmt.Errorf("setup sequence %w", err)
 	}
 	db.rbf.Init(db.openRBF)
 	db.txt.Init(openTxt)
@@ -93,7 +101,7 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		return err
 	}
 	defer done.Close()
-	hi, err := allocateRecordsID(da, uint64(len(rows.Timestamp)))
+	hi, err := db.seq.Allocate(uint64(len(rows.Timestamp)))
 	if err != nil {
 		return fmt.Errorf("assigning ids to rows %w", err)
 	}
