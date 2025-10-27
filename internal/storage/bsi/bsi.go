@@ -53,6 +53,8 @@ func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter
 		}
 		b.data[i] = bits
 	}
+	b.exists.UnionInPlace(exists.Clone())
+	b.sign.UnionInPlace(sign.Clone())
 	return nil
 }
 
