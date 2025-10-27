@@ -22,14 +22,12 @@ var tsidPool tsid.Pool
 
 // Store implements timeseries database.
 type Store struct {
-	dataPath string
+	tree     *btree.BTreeG[rbf.View]
 	rbf      single.Group[rbf.View, *rbf.DB, dataPath]
 	txt      single.Group[rbf.View, *bbolt.DB, dataPath]
-
-	mu   sync.RWMutex
-	tree *btree.BTreeG[rbf.View]
-
-	seq seq.Seq
+	dataPath string
+	seq      seq.Seq
+	mu       sync.RWMutex
 }
 
 // Init initializes store on dataPath.

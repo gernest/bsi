@@ -33,17 +33,17 @@ var samplePool = &sync.Pool{New: func() any {
 
 // Samples is a reusable container of timeseries samples.
 type Samples struct {
-	labels     array.Uint64
-	ts         array.Uint64
-	values     array.Uint64
 	series     map[checksum.U128]*roaring.Bitmap
 	seriesData map[checksum.U128][]byte
 	kindMap    map[keys.Kind]*roaring.Bitmap
 	kindData   map[keys.Kind]map[uint64][]byte
+	labels     array.Uint64
+	ts         array.Uint64
+	values     array.Uint64
 	ls         []checksum.U128
-	active     checksum.U128
 	b          buffer.B
 	ref        int32
+	active     checksum.U128
 }
 
 // NewSamples returns new Samples instance. Call Release when done using it to free
@@ -160,13 +160,11 @@ func (s *Samples) Iterator(c chunkenc.Iterator) chunkenc.Iterator {
 // Iter implements chunkenc.Iterator on top of Samples.
 type Iter struct {
 	po *roaring.Iterator
-
-	s *Samples
-
-	t  int64
-	f  float64
+	s  *Samples
 	hs *histogram.Histogram
 	fh *histogram.FloatHistogram
+	t  int64
+	f  float64
 }
 
 // Init initializes i state.

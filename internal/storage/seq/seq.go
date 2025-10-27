@@ -8,9 +8,9 @@ import (
 
 // Seq allocates monotonically increasing sequences. Used to assign record ids.
 type Seq struct {
-	mu    sync.Mutex
 	f     *os.File
 	value uint64
+	mu    sync.Mutex
 	buf   [8]byte
 }
 
