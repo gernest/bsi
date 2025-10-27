@@ -2,15 +2,17 @@ package storage
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/array"
+	"github.com/gernest/u128/internal/storage/bsi"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -23,23 +25,20 @@ import (
 )
 
 var samplePool = &sync.Pool{New: func() any {
-	return &Samples{
-		series:     make(map[checksum.U128]*roaring.Bitmap),
-		seriesData: make(map[checksum.U128][]byte),
-		kindMap:    make(map[keys.Kind]*roaring.Bitmap),
-		kindData:   make(map[keys.Kind]map[uint64][]byte),
-	}
+	s := new(Samples)
+	s.Init()
+	return s
 }}
 
 // Samples is a reusable container of timeseries samples.
 type Samples struct {
 	series     map[checksum.U128]*roaring.Bitmap
 	seriesData map[checksum.U128][]byte
-	kindMap    map[keys.Kind]*roaring.Bitmap
-	kindData   map[keys.Kind]map[uint64][]byte
-	labels     array.Uint64
-	ts         array.Uint64
-	values     array.Uint64
+	data       map[uint64][]byte
+	kind       bsi.BSI
+	labels     bsi.BSI
+	ts         bsi.BSI
+	values     bsi.BSI
 	ls         []checksum.U128
 	b          buffer.B
 	ref        int32
@@ -67,6 +66,15 @@ func (s *Samples) Retain() {
 	s.ref++
 }
 
+func (s *Samples) Init() {
+	s.series = make(map[checksum.U128]*roaring.Bitmap)
+	s.seriesData = make(map[checksum.U128][]byte)
+	s.data = make(map[uint64][]byte)
+	s.labels.Init()
+	s.ts.Init()
+	s.values.Init()
+}
+
 // Reset clears s for reuse.
 func (s *Samples) Reset() {
 	s.labels.Reset()
@@ -74,35 +82,17 @@ func (s *Samples) Reset() {
 	s.values.Reset()
 	clear(s.series)
 	clear(s.seriesData)
-	clear(s.kindMap)
-	clear(s.kindData)
+	clear(s.data)
+	s.kind.Reset()
 	s.b.B = s.b.B[:0]
 	s.ref = 0
 	s.ls = s.ls[:0]
 }
 
-func (s *Samples) getKind(kind keys.Kind) *roaring.Bitmap {
-	a, ok := s.kindMap[kind]
-	if !ok {
-		a = roaring.NewBitmap()
-		s.kindMap[kind] = a
-	}
-	return a
-}
-
-func (s *Samples) getKindData(kind keys.Kind) map[uint64][]byte {
-	a, ok := s.kindData[kind]
-	if !ok {
-		a = map[uint64][]byte{}
-		s.kindData[kind] = a
-	}
-	return a
-}
-
 // Make builds storage.SeriesSet from samples s.  We sort series by the u128 checksum
 // to ensure consistent output during tests.
 func (s *Samples) Make() storage.SeriesSet {
-	if len(s.ts.B) == 0 {
+	if !s.ts.Any() {
 		return storage.EmptySeriesSet()
 	}
 	s.ls = s.ls[:0]
@@ -187,16 +177,22 @@ func (i *Iter) Next() chunkenc.ValueType {
 		i.s.Release()
 		return chunkenc.ValNone
 	}
-	i.t = int64(i.s.ts.B[idx])
-	if i.s.getKind(keys.Float).Contains(idx) {
-		i.f = math.Float64frombits(i.s.values.B[idx])
+	ts, _ := i.s.ts.GetValue(idx)
+	i.t = int64(ts)
+	kind, ok := i.s.kind.GetValue(idx)
+	if !ok {
+		panic(fmt.Errorf("missing kind for samples at post=%d", idx))
+	}
+	switch keys.Kind(kind) {
+	case keys.Float:
+		v, _ := i.s.values.GetValue(idx)
+		i.f = math.Float64frombits(uint64(v))
 		i.hs = nil
 		i.fh = nil
 		return chunkenc.ValFloat
-	}
-	if i.s.getKind(keys.Histogram).Contains(idx) {
+	case keys.Histogram:
 		var hs prompb.Histogram
-		hs.Unmarshal(i.s.kindData[keys.Histogram][i.s.values.B[idx]])
+		hs.Unmarshal(i.s.data[idx])
 		if hs.IsFloatHistogram() {
 			i.fh = hs.ToFloatHistogram()
 			i.hs = nil
@@ -205,20 +201,14 @@ func (i *Iter) Next() chunkenc.ValueType {
 		i.hs = hs.ToIntHistogram()
 		i.fh = nil
 		return chunkenc.ValHistogram
+	default:
+		panic(fmt.Errorf("unexpected kind: %v  at=%d ", kind, idx))
 	}
-	// We need to ensure all positions are accounted for in kinds bitmap. If we arrive
-	// here it means something is terribly wrong with out position handling logic.
-	panic(fmt.Errorf("unexpected position %d", idx))
 }
 
 // Seek implements chunkenc.Iterator.
 func (i *Iter) Seek(t int64) chunkenc.ValueType {
-	v := uint64(t)
-	idx := sort.Search(len(i.s.ts.B), func(idx int) bool {
-		return i.s.ts.B[idx] < v
-	})
-	i.po.Seek(uint64(idx))
-	return i.Next()
+	panic("not supported")
 }
 
 // At implements chunkenc.Iterator.
@@ -249,6 +239,63 @@ func (i *Iter) Err() error {
 	return nil
 }
 
+func (db *Store) Select(start, end time.Time) storage.SeriesSet {
+	v := db.selectViews(start, end)
+	defer v.Release()
+
+	if v.IsEmpty() {
+		return storage.EmptySeriesSet()
+	}
+
+	result := NewSamples()
+	defer result.Release()
+
+	return result.Make()
+
+}
+
+type views struct {
+	year []uint16
+	week []uint8
+}
+
+var viewsPool = &sync.Pool{New: func() any {
+	return &views{
+		year: make([]uint16, 0, 4<<10),
+		week: make([]uint8, 0, 4<<10),
+	}
+}}
+
+func (v *views) IsEmpty() bool {
+	return len(v.year) == 0
+}
+
+func (v *views) Release() {
+	v.year = v.year[:0]
+	v.week = v.week[:0]
+	viewsPool.Put(v)
+}
+
+// selectViews returns all views between start and end. Upper view is inclusive,
+// we ant to search the upper week for valid samples.
+func (db *Store) selectViews(start, end time.Time) (v *views) {
+	v = viewsPool.Get().(*views)
+	lo := rbf.ViewTS(start)
+	hi := rbf.ViewTS(end)
+
+	db.mu.RLock()
+	db.tree.AscendGreaterOrEqual(lo, func(item rbf.View) bool {
+		if item.Compare(&hi) > 0 {
+			return false
+		}
+		v.year = append(v.year, item.Year)
+		v.week = append(v.week, item.Week)
+		return true
+	})
+	db.mu.RUnlock()
+	return
+}
+
 func (db *Store) translateView(result *Samples, view rbf.View, offset int) error {
 	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
 	if err != nil {
@@ -256,113 +303,85 @@ func (db *Store) translateView(result *Samples, view rbf.View, offset int) error
 	}
 	defer done.Close()
 
+	local := map[uint64][]byte{}
+	var b [8]byte
+
+	readData := func(tx *bbolt.Tx, bucket []byte, columns *roaring.Bitmap) {
+		clear(local)
+		bu := tx.Bucket(bucket)
+		for column := range columns.RangeAll() {
+			value, _ := result.kind.GetValue(column)
+			if v, ok := local[value]; ok {
+				result.data[column] = v
+				continue
+			}
+			binary.BigEndian.PutUint64(b[:], value)
+			v := result.b.Own(bu.Get(b[:]))
+			local[value] = v
+		}
+	}
+
 	return da.View(func(tx *bbolt.Tx) error {
-		if h, ok := result.kindMap[keys.Histogram]; ok && h.Any() {
-			ls := result.values.B
-			it := h.IteratorAt(uint64(offset))
-
-			v2idx := map[uint64]uint64{}
-
-			ra := roaring.NewBitmap()
-			for nxt, eof := it.Next(); !eof; nxt, eof = it.Next() {
-				v2idx[ls[nxt]] = nxt
-				ra.DirectAdd(ls[nxt])
-			}
-			data := result.getKindData(keys.Histogram)
-
-			_ = readFromU64(tx.Bucket(histogramData), ra, func(id uint64, value []byte) error {
-				data[v2idx[id]] = result.b.Own(value)
-				return nil
-			})
-
+		if ra := result.kind.GetColumns(int64(keys.Histogram)); ra.Any() {
+			readData(tx, histogramData, ra)
+		}
+		if ra := result.kind.GetColumns(int64(keys.Exemplar)); ra.Any() {
+			readData(tx, exemplarData, ra)
+		}
+		if ra := result.kind.GetColumns(int64(keys.Metadata)); ra.Any() {
+			readData(tx, metaData, ra)
 		}
 
-		// translate labels
+		series := result.labels.AsMap()
+		// Series are repetitive we map series value to column position they appeared.
+		v2Columns := map[uint64]*roaring.Bitmap{}
 		ra := roaring.NewBitmap()
-		ls := result.labels.B[offset:]
-		ra.DirectAddNPlain(ls...)
-
-		v2idx := map[uint64]uint64{}
-		for i := range ls {
-			v2idx[ls[i]] = uint64(offset + i)
+		for k, v := range series {
+			r, ok := v2Columns[v]
+			if !ok {
+				r = roaring.NewBitmap()
+				v2Columns[v] = r
+			}
+			ra.DirectAdd(v)
+			r.DirectAdd(k)
 		}
-		readFromU64(tx.Bucket(metricsData), ra, func(id uint64, value []byte) error {
+
+		return readFromU64(tx.Bucket(metaData), ra, func(id uint64, value []byte) error {
 			sum := checksum.Hash(value)
-			rx, ok := result.series[sum]
+			sr, ok := result.series[sum]
 			if ok {
-				rx.DirectAdd(v2idx[id])
+				// update columns
+				sr.UnionInPlace(v2Columns[id])
 				return nil
 			}
-			rx = roaring.NewBitmap()
-			rx.DirectAdd(v2idx[id])
-			result.series[sum] = rx
+			// new series
+			result.series[sum] = v2Columns[id]
 			result.seriesData[sum] = result.b.Own(value)
 			return nil
 		})
-		return nil
 	})
 }
 
 func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
-	offset := uint64(result.ts.Len())
 
-	{
-		// samples can only be from histogram or floats
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
-		if !ok {
-			return fmt.Errorf("missing timestamp root record")
-		}
-		hist, float, err := readFloatOrHistMetricType(tx, root, shard)
-		if err != nil {
-			return fmt.Errorf("reading metric type %w", err)
-		}
-
-		// valid samples
-		match = match.Intersect(hist.Intersect(float))
-		if !match.Any() {
-			return nil
-		}
-
-		hist.IntersectInPlace(match)
-		float.IntersectInPlace(match)
-
-		if !hist.Any() {
-			a := result.getKind(keys.Float)
-			// all floats
-			for i := range match.Count() {
-				a.DirectAdd(offset + i)
-			}
-		} else if !float.Any() {
-			// all histograms
-			b := result.getKind(keys.Histogram)
-			for i := range match.Count() {
-				b.DirectAdd(offset + i)
-			}
-		} else {
-			a := result.getKind(keys.Float)
-			b := result.getKind(keys.Histogram)
-			var i uint64
-			for row := range match.RangeAll() {
-				if float.Contains(row) {
-					a.DirectAdd(offset + i)
-				} else {
-					b.DirectAdd(offset + i)
-				}
-				i++
-			}
-		}
-	}
-
-	size := int(match.Count())
 	{
 		root, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
-		data := result.ts.Allocate(size)
-		err := readBSI(tx, root, shard, match, data)
+		err := readBSI(tx, root, shard, match, &result.ts)
 		if err != nil {
 			return fmt.Errorf("reading timestamp %w", err)
+		}
+	}
+	{
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		if !ok {
+			return fmt.Errorf("missing metric type root record")
+		}
+		err := readBSI(tx, root, shard, match, &result.ts)
+		if err != nil {
+			return fmt.Errorf("reading metric type %w", err)
 		}
 	}
 	{
@@ -370,8 +389,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
-		data := result.labels.Allocate(size)
-		err := readBSI(tx, root, shard, match, data)
+		err := readBSI(tx, root, shard, match, &result.labels)
 		if err != nil {
 			return fmt.Errorf("reading labels %w", err)
 		}
@@ -381,8 +399,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
-		data := result.values.Allocate(size)
-		err := readBSI(tx, root, shard, match, data)
+		err := readBSI(tx, root, shard, match, &result.values)
 		if err != nil {
 			return fmt.Errorf("reading values %w", err)
 		}

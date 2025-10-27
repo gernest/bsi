@@ -9,6 +9,7 @@ import (
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/gernest/u128/internal/bitmaps"
 	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/bsi"
 	"github.com/gernest/u128/internal/storage/keys"
 )
 
@@ -93,7 +94,7 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, predicate, end int64) (
 	return bitmaps.Range(cu, bitmaps.BETWEEN, shard, depth, predicate, end)
 }
 
-func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, result []uint64) error {
+func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, result *bsi.BSI) error {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
 
@@ -104,10 +105,7 @@ func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, resu
 	}
 	depth := mx / shardwidth.ShardWidth
 
-	ex := bitmaps.NewExtractor()
-	defer ex.Release()
-
-	return ex.BSI(cu, uint8(depth), shard, filter, result)
+	return result.From(cu, shard, uint8(depth), filter)
 }
 
 func readBSIMin(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap) (min int64, count uint64, err error) {

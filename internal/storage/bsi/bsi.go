@@ -5,6 +5,7 @@
 package bsi
 
 import (
+	"math/bits"
 	"slices"
 
 	"github.com/gernest/roaring"
@@ -18,38 +19,56 @@ type BSI struct {
 	data   []*roaring.Bitmap
 }
 
-// New extracts bsi values from tx.
-func New(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter *roaring.Bitmap) (*BSI, error) {
+func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter *roaring.Bitmap) error {
 	exists, err := bitmaps.Row(tx, shard, 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if filter != nil {
 		exists = exists.Intersect(filter)
 	}
-	o := &BSI{exists: exists.Clone(), data: make([]*roaring.Bitmap, 0, bitDepth)}
-	if !exists.Any() {
-		return o, nil
-	}
+
 	sign, err := bitmaps.Row(tx, shard, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if filter != nil {
 		sign = sign.Intersect(filter)
 	}
-	o.sign = sign.Clone()
+
+	if len(b.data) < int(bitDepth) {
+		b.data = slices.Grow(b.data, int(bitDepth))[:bitDepth]
+	}
 
 	for i := range uint64(bitDepth) {
 		bits, err := bitmaps.Row(tx, shard, 2+i)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		bits = bits.Intersect(exists)
-		o.data = append(o.data, bits.Clone())
+		bits = bits.Intersect(exists).Clone()
+
+		if b.data[i] != nil {
+			b.data[i].UnionInPlace(bits)
+			continue
+		}
+		b.data[i] = bits
 	}
-	o.Optimize()
-	return o, nil
+	return nil
+}
+
+func (b *BSI) Any() bool {
+	return b.exists.Any()
+}
+
+func (b *BSI) Init() {
+	b.exists = roaring.NewBitmap()
+	b.sign = roaring.NewBitmap()
+}
+
+func (b *BSI) Reset() {
+	b.exists.Containers.Reset()
+	b.sign.Containers.Reset()
+	b.data = b.data[:0]
 }
 
 // Optimize run optimize all bitmaps.
@@ -82,11 +101,10 @@ func (b *BSI) Union(other ...*BSI) {
 }
 
 // GetValue reads value encoded at column.
-func (b *BSI) GetValue(column uint64) (value int64, exists bool) {
+func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 	if !b.exists.Contains(column) {
 		return
 	}
-	var val uint64
 	if b.sign.Contains(column) {
 		val |= 1 << 63
 	}
@@ -96,5 +114,67 @@ func (b *BSI) GetValue(column uint64) (value int64, exists bool) {
 		}
 	}
 	val = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))
-	return int64(val), true
+	return val, true
+}
+
+// GetColumns returns al columns with given predicate.
+func (b *BSI) GetColumns(predicate int64) *roaring.Bitmap {
+	if !b.exists.Any() {
+		return roaring.NewBitmap()
+	}
+	unsignedPredicate := absInt64(predicate)
+	if bits.Len64(unsignedPredicate) > len(b.data) {
+		// Predicate is out of range.
+		return roaring.NewBitmap()
+	}
+	ra := b.exists.Clone()
+	if predicate < 0 {
+		ra = ra.Intersect(b.sign) // only negatives
+	} else {
+		ra = ra.Difference(b.sign) // only positives
+	}
+	for i := range b.data {
+		row := b.data[i]
+		bit := (unsignedPredicate >> uint(i)) & 1
+
+		if bit == 1 {
+			ra = ra.Intersect(row)
+		} else {
+			ra = ra.Difference(row)
+		}
+	}
+	return ra
+}
+
+func (b *BSI) AsMap() (result map[uint64]uint64) {
+	result = make(map[uint64]uint64)
+	mergeBits(b.exists, 0, result)
+	mergeBits(b.sign, 1<<63, result)
+	for i := range b.data {
+		mergeBits(b.data[i], 1<<i, result)
+	}
+	for k, val := range result {
+		result[k] = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))
+	}
+	return
+}
+
+func mergeBits(ra *roaring.Bitmap, mask uint64, out map[uint64]uint64) {
+	itr := ra.Iterator()
+	itr.Seek(0)
+
+	for v, eof := itr.Next(); !eof; v, eof = itr.Next() {
+		out[v] |= mask
+	}
+}
+
+func absInt64(v int64) uint64 {
+	switch {
+	case v > 0:
+		return uint64(v)
+	case v == -9223372036854775808:
+		return 9223372036854775808
+	default:
+		return uint64(-v)
+	}
 }
