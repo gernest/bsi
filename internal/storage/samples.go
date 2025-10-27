@@ -102,11 +102,21 @@ func (s *Samples) Make() storage.SeriesSet {
 	sort.Slice(s.ls, func(i, j int) bool {
 		return bytes.Compare(s.ls[i][:], s.ls[j][:]) < 0
 	})
+
+	s.Retain()
+
+	// We may have s stay in memory much longer depending on PromQL. We ensure
+	// small memory footprint is occupied until s is released.
+	s.labels.Reset() // we never use this again.
+	s.kind.Optimize()
+	s.ts.Optimize()
+	s.values.Optimize()
 	return s
 }
 
 // At implements storage.SeriesSet.
 func (s *Samples) At() storage.Series {
+	s.Retain()
 	return s
 }
 
