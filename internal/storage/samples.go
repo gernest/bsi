@@ -328,6 +328,7 @@ func (db *Store) translateView(result *Samples, view rbf.View, offset int) error
 			binary.BigEndian.PutUint64(b[:], value)
 			v := result.b.Own(bu.Get(b[:]))
 			local[value] = v
+			result.data[column] = v
 		}
 	}
 
