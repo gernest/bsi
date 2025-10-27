@@ -310,6 +310,8 @@ func (v *views) IsEmpty() bool {
 func (v *views) Release() {
 	v.year = v.year[:0]
 	v.week = v.week[:0]
+	clear(v.columns)
+	v.columns = v.columns[:0]
 	viewsPool.Put(v)
 }
 
