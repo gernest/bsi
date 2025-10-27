@@ -265,14 +265,16 @@ func (db *Store) Select(start, end time.Time) storage.SeriesSet {
 }
 
 type views struct {
-	year []uint16
-	week []uint8
+	year    []uint16
+	week    []uint8
+	columns []*roaring.Bitmap
 }
 
 var viewsPool = &sync.Pool{New: func() any {
 	return &views{
-		year: make([]uint16, 0, 4<<10),
-		week: make([]uint8, 0, 4<<10),
+		year:    make([]uint16, 0, 4<<10),
+		week:    make([]uint8, 0, 4<<10),
+		columns: make([]*roaring.Bitmap, 0, 4<<10),
 	}
 }}
 
@@ -300,21 +302,20 @@ func (db *Store) selectViews(start, end time.Time) (v *views) {
 		}
 		v.year = append(v.year, item.Year)
 		v.week = append(v.week, item.Week)
+		v.columns = append(v.columns, roaring.NewBitmap())
 		return true
 	})
 	db.mu.RUnlock()
 	return
 }
 
-func (db *Store) translateView(result *Samples, view rbf.View, offset int) error {
-	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
+// applies any translation to samples.
+func (db *Store) translateView(result *Samples, vs *views) error {
 
 	local := map[uint64][]byte{}
 	var b [8]byte
+	v2Columns := map[uint64]*roaring.Bitmap{}
+	ra := roaring.NewBitmap()
 
 	readData := func(tx *bbolt.Tx, bucket []byte, columns *roaring.Bitmap) {
 		clear(local)
@@ -332,45 +333,57 @@ func (db *Store) translateView(result *Samples, view rbf.View, offset int) error
 		}
 	}
 
-	return da.View(func(tx *bbolt.Tx) error {
-		if ra := result.kind.GetColumns(int64(keys.Histogram)); ra.Any() {
-			readData(tx, histogramData, ra)
+	for i := range vs.columns {
+		if !vs.columns[i].Any() {
+			continue
 		}
-		if ra := result.kind.GetColumns(int64(keys.Exemplar)); ra.Any() {
-			readData(tx, exemplarData, ra)
+		da, done, err := db.txt.Do(rbf.View{Year: vs.year[i], Week: vs.week[i]}, dataPath{Path: db.dataPath})
+		if err != nil {
+			return err
 		}
-		if ra := result.kind.GetColumns(int64(keys.Metadata)); ra.Any() {
-			readData(tx, metaData, ra)
-		}
-
-		series := result.labels.AsMap()
-		// Series are repetitive we map series value to column position they appeared.
-		v2Columns := map[uint64]*roaring.Bitmap{}
-		ra := roaring.NewBitmap()
-		for k, v := range series {
-			r, ok := v2Columns[v]
-			if !ok {
-				r = roaring.NewBitmap()
-				v2Columns[v] = r
+		err = da.View(func(tx *bbolt.Tx) error {
+			if ra := result.kind.GetColumns(int64(keys.Histogram)); ra.Any() {
+				readData(tx, histogramData, ra)
 			}
-			ra.DirectAdd(v)
-			r.DirectAdd(k)
-		}
+			if ra := result.kind.GetColumns(int64(keys.Exemplar)); ra.Any() {
+				readData(tx, exemplarData, ra)
+			}
+			if ra := result.kind.GetColumns(int64(keys.Metadata)); ra.Any() {
+				readData(tx, metaData, ra)
+			}
+			series := result.labels.AsMap()
+			clear(v2Columns)
+			ra.Containers.Reset()
+			for k, v := range series {
+				r, ok := v2Columns[v]
+				if !ok {
+					r = roaring.NewBitmap()
+					v2Columns[v] = r
+				}
+				ra.DirectAdd(v)
+				r.DirectAdd(k)
+			}
 
-		return readFromU64(tx.Bucket(metaData), ra, func(id uint64, value []byte) error {
-			sum := checksum.Hash(value)
-			sr, ok := result.series[sum]
-			if ok {
-				// update columns
-				sr.UnionInPlace(v2Columns[id])
+			return readFromU64(tx.Bucket(metaData), ra, func(id uint64, value []byte) error {
+				sum := checksum.Hash(value)
+				sr, ok := result.series[sum]
+				if ok {
+					// update columns
+					sr.UnionInPlace(v2Columns[id])
+					return nil
+				}
+				// new series
+				result.series[sum] = v2Columns[id]
+				result.seriesData[sum] = result.b.Own(value)
 				return nil
-			}
-			// new series
-			result.series[sum] = v2Columns[id]
-			result.seriesData[sum] = result.b.Own(value)
-			return nil
+			})
 		})
-	})
+		done.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
