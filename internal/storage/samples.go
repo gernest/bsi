@@ -14,6 +14,7 @@ import (
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/views"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -22,6 +23,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.etcd.io/bbolt"
 )
+
+var viewsPool views.Pool
 
 var samplePool = &sync.Pool{New: func() any {
 	s := new(Samples)
@@ -251,9 +254,9 @@ func (db *Store) Select(start, end int64) storage.SeriesSet {
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	defer v.Release()
+	defer viewsPool.Put(v)
 
-	if v.IsEmpty() {
+	if len(v.Shards) == 0 {
 		return storage.EmptySeriesSet()
 	}
 	result := NewSamples()
@@ -264,9 +267,6 @@ func (db *Store) Select(start, end int64) storage.SeriesSet {
 		return storage.ErrSeriesSet(err)
 	}
 
-	if v.IsEmpty() {
-		return storage.EmptySeriesSet()
-	}
 	err = db.applyTranslation(result)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -275,51 +275,29 @@ func (db *Store) Select(start, end int64) storage.SeriesSet {
 
 }
 
-type views struct {
-	shards []uint64
-	meta   []Shard
-}
-
-var viewsPool = &sync.Pool{New: func() any {
-	return &views{
-		shards: make([]uint64, 0, 4<<10),
-		meta:   make([]Shard, 0, 4<<10),
-	}
-}}
-
-func (v *views) IsEmpty() bool {
-	return len(v.shards) == 0
-}
-
-func (v *views) Release() {
-	v.shards = v.shards[:0]
-	v.meta = v.meta[:0]
-	viewsPool.Put(v)
-}
-
 // selectViews returns all views between start and end. Upper view is inclusive,
 // we ant to search the upper week for valid samples.
-func (db *Store) selectViews(start, end int64) (vs *views, err error) {
-	vs = viewsPool.Get().(*views)
+func (db *Store) selectViews(start, end int64) (vs *views.List, err error) {
+	vs = viewsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		cu := tx.Bucket(admin).Cursor()
 		for k, v := cu.First(); v != nil; k, v = cu.Next() {
-			o := magic.ReinterpretSlice[Shard](v)
+			o := magic.ReinterpretSlice[views.Meta](v)
 			if o[0].InRange(start, end) {
-				vs.shards = append(vs.shards, binary.BigEndian.Uint64(k))
-				vs.meta = append(vs.meta, o[0])
+				vs.Shards = append(vs.Shards, binary.BigEndian.Uint64(k))
+				vs.Meta = append(vs.Meta, o[0])
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		vs.Release()
+		viewsPool.Put(vs)
 	}
 	return
 }
 
-func (db *Store) readTs(result *Samples, vs *views, start, end int64) error {
+func (db *Store) readTs(result *Samples, vs *views.List, start, end int64) error {
 	tx, err := db.rbf.Begin(false)
 	if err != nil {
 		return err
@@ -331,13 +309,13 @@ func (db *Store) readTs(result *Samples, vs *views, start, end int64) error {
 		return err
 	}
 
-	for i := range vs.shards {
-		shard := vs.shards[i]
+	for i := range vs.Shards {
+		shard := vs.Shards[i]
 		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].TsDepth, bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
@@ -349,11 +327,11 @@ func (db *Store) readTs(result *Samples, vs *views, start, end int64) error {
 			panic("missing metric type root records")
 		}
 
-		float, err := readBSIRange(tx, kind, shard, bitmaps.EQ, int64(keys.Float), 0)
+		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Float), 0)
 		if err != nil {
 			return err
 		}
-		histogram, err := readBSIRange(tx, kind, shard, bitmaps.EQ, int64(keys.Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Histogram), 0)
 		if err != nil {
 			return err
 		}
@@ -361,7 +339,7 @@ func (db *Store) readTs(result *Samples, vs *views, start, end int64) error {
 		if !ra.Any() {
 			continue
 		}
-		err = readSamples(result, tx, records, shard, ra)
+		err = readSamples(result, vs.Meta[i], tx, records, shard, ra)
 		if err != nil {
 			return err
 		}
@@ -415,14 +393,14 @@ func (db *Store) applyTranslation(result *Samples) error {
 
 }
 
-func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readSamples(result *Samples, meta views.Meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
 		root, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
-		err := readBSI(tx, root, shard, match, &result.ts)
+		err := readBSI(tx, root, shard, meta.TsDepth, match, &result.ts)
 		if err != nil {
 			return fmt.Errorf("reading timestamp %w", err)
 		}
@@ -432,7 +410,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
-		err := readBSI(tx, root, shard, match, &result.ts)
+		err := readBSI(tx, root, shard, meta.KindDepth, match, &result.ts)
 		if err != nil {
 			return fmt.Errorf("reading metric type %w", err)
 		}
@@ -442,7 +420,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
-		err := readBSI(tx, root, shard, match, &result.labels)
+		err := readBSI(tx, root, shard, meta.LabelsDepth, match, &result.labels)
 		if err != nil {
 			return fmt.Errorf("reading labels %w", err)
 		}
@@ -452,7 +430,7 @@ func readSamples(result *Samples, tx *rbf.Tx, records *rbf.Records, shard uint64
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
-		err := readBSI(tx, root, shard, match, &result.values)
+		err := readBSI(tx, root, shard, meta.ValueDepth, match, &result.values)
 		if err != nil {
 			return fmt.Errorf("reading values %w", err)
 		}

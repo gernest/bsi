@@ -1,38 +1,22 @@
 package storage
 
 import (
-	"fmt"
-
 	"github.com/gernest/roaring"
-	"github.com/gernest/roaring/shardwidth"
 	"github.com/gernest/u128/internal/bitmaps"
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/bsi"
 )
 
-func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, op bitmaps.OP, predicate, end int64) (*roaring.Bitmap, error) {
+func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps.OP, predicate, end int64) (*roaring.Bitmap, error) {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
 
-	// compute bit depth
-	mx, err := cu.Max()
-	if err != nil {
-		return nil, fmt.Errorf("computing max value %w", err)
-	}
-	depth := mx / shardwidth.ShardWidth
-	return bitmaps.Range(cu, op, shard, depth, predicate, end)
+	return bitmaps.Range(cu, op, shard, uint64(depth), predicate, end)
 }
 
-func readBSI(tx *rbf.Tx, root uint32, shard uint64, filter *roaring.Bitmap, result *bsi.BSI) error {
+func readBSI(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap, result *bsi.BSI) error {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
-
-	// compute bit depth
-	mx, err := cu.Max()
-	if err != nil {
-		return fmt.Errorf("computing max value %w", err)
-	}
-	depth := mx / shardwidth.ShardWidth
 
 	return result.From(cu, shard, uint8(depth), filter)
 }

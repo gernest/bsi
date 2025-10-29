@@ -5,12 +5,9 @@ import (
 	"cmp"
 	"fmt"
 	"io"
-	"path/filepath"
-	"time"
 	"unsafe"
 
 	"github.com/benbjohnson/immutable"
-	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/checksum"
 )
 
@@ -18,46 +15,6 @@ const recordSize = int(unsafe.Sizeof(Record{}))
 
 // Records holds immutable mapping of bitmap keys to root page number.
 type Records = immutable.SortedMap[Key, uint32]
-
-type View struct {
-	Year uint16
-	Week uint8
-}
-
-var zeroView View
-
-func (v View) IsEmpty() bool {
-	return v == zeroView
-}
-
-func ViewUnixMilli(t int64) View {
-	return ViewTS(time.UnixMilli(t))
-}
-
-func ViewTS(ts time.Time) View {
-	y, w := ts.ISOWeek()
-	return View{
-		Year: uint16(y),
-		Week: uint8(w),
-	}
-}
-
-func (v *View) Compare(other *View) int {
-	i := cmp.Compare(v.Year, other.Year)
-	if i != 0 {
-		return i
-	}
-	return cmp.Compare(v.Week, other.Week)
-}
-
-func (v View) String() string {
-	return v.Path("")
-}
-
-// Path returns path to the view directory.
-func (v View) Path(base string) string {
-	return filepath.Join(base, fmt.Sprintf("%04d_%02d", v.Year, v.Week))
-}
 
 type Key struct {
 	Column checksum.U128
@@ -122,17 +79,4 @@ func (CompareRecord) Compare(a, b Key) int {
 		return i
 	}
 	return cmp.Compare(a.Shard, b.Shard)
-}
-
-type Map map[Key]*roaring.Bitmap
-
-func (r Map) Get(column checksum.U128, shard uint64) *roaring.Bitmap {
-	k := Key{Shard: shard, Column: column}
-	x, ok := r[k]
-	if ok {
-		return x
-	}
-	x = roaring.NewMapBitmap()
-	r[k] = x
-	return x
 }
