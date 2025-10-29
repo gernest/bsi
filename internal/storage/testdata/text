@@ -1,4 +1,4 @@
-open lo=1 hi=2 year=2025 week=2
+open
 {__name__="cpu_usage_user", arch="x64", datacenter="eu-central-1a", hostname="host_0", os="Ubuntu16.10", rack="67", region="eu-central-1", service="19", service_environment="production", service_version="0", team="SF"}
 {__name__="cpu_usage_syst", arch="x64", datacenter="eu-central-1a", hostname="host_0", os="Ubuntu16.10", rack="67", region="eu-central-1", service="19", service_environment="production", service_version="0", team="cpu_usage_system"}
 {__name__="cpu_usage_idle", arch="x64", datacenter="eu-central-1a", hostname="host_0", os="Ubuntu16.10", rack="67", region="eu-central-1", service="19", service_environment="production", service_version="0", team="cpu_usage_idle"}

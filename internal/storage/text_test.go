@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/datadriven"
-	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -18,24 +17,16 @@ func TestText(t *testing.T) {
 	datadriven.RunTest(t, "testdata/text", func(t *testing.T, td *datadriven.TestData) string {
 		switch td.Cmd {
 		case "open":
-			var (
-				year, week uint64
-			)
-			td.ScanArgs(t, "year", &year)
-			td.ScanArgs(t, "week", &week)
-			k := rbf.View{
-				Year: uint16(year),
-				Week: uint8(week),
-			}
 
-			db, err := openTxt(k, dataPath{Path: t.TempDir()})
+			db := new(Store)
+			err := db.Init(t.TempDir())
 			if err != nil {
 				td.Fatalf(t, "failed opening text database %v", err)
 				return ""
 			}
 			defer db.Close()
 			var o bytes.Buffer
-			fmt.Fprintln(&o, filepath.Base(db.Path()))
+			fmt.Fprintln(&o, filepath.Base(db.txt.Path()))
 			var labels [][]byte
 			for line := range strings.SplitSeq(td.Input, "\n") {
 				if strings.HasPrefix(line, "{") {
@@ -51,7 +42,7 @@ func TestText(t *testing.T) {
 					ids := tsidPool.Get()
 					defer tsidPool.Put(ids)
 
-					hi, err := assignTSID(db, ids, labels)
+					hi, err := assignTSID(db.txt, ids, labels)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)
