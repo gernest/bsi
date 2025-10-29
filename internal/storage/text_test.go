@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/datadriven"
 	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -27,7 +28,7 @@ func TestText(t *testing.T) {
 			defer db.Close()
 			var o bytes.Buffer
 			fmt.Fprintln(&o, filepath.Base(db.txt.Path()))
-			var labels [][]byte
+			r := &rows.Rows{}
 			for line := range strings.SplitSeq(td.Input, "\n") {
 				if strings.HasPrefix(line, "{") {
 					la, err := parser.ParseMetric(line)
@@ -35,14 +36,14 @@ func TestText(t *testing.T) {
 						td.Fatalf(t, "failed parsing metric %v", err)
 						return ""
 					}
-					labels = append(labels, bytes.Clone(buffer.UnwrapLabel(&la)))
+					r.Labels = append(r.Labels, bytes.Clone(buffer.UnwrapLabel(&la)))
 					continue
 				}
 				if strings.HasPrefix(line, "get_tsid") {
 					ids := tsidPool.Get()
 					defer tsidPool.Put(ids)
 
-					hi, err := assignTSID(db.txt, ids, labels)
+					hi, err := translate(db.txt, ids, r)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)
@@ -52,7 +53,7 @@ func TestText(t *testing.T) {
 					for i := range ids.B {
 						fmt.Fprintln(&o, &ids.B[i])
 					}
-					labels = labels[:0]
+					r.Labels = r.Labels[:0]
 				}
 			}
 			return o.String()

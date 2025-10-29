@@ -9,7 +9,6 @@ import (
 
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
 	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/gernest/u128/internal/storage/seq"
@@ -105,37 +104,9 @@ func (db *Store) AddRows(rows *rows.Rows) error {
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	hi, err := assignTSID(db.txt, ids, rows.Labels)
+	hi, err := translate(db.txt, ids, rows)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
-	}
-
-	seen := map[keys.Kind]bool{
-		keys.Float: true,
-	}
-
-	for i := range rows.Kind {
-		if seen[rows.Kind[i]] {
-			continue
-		}
-		switch rows.Kind[i] {
-		case keys.Histogram:
-			err = assignU64ToHistograms(db.txt, rows.Value, rows.Histogram)
-			if err != nil {
-				return fmt.Errorf("translating histograms %w", err)
-			}
-		case keys.Exemplar:
-			err = assignU64ToExemplars(db.txt, rows.Value, rows.Exemplar)
-			if err != nil {
-				return fmt.Errorf("translating exemplars %w", err)
-			}
-		case keys.Metadata:
-			err = assignU64ToMetadata(db.txt, rows.Value, rows.Metadata)
-			if err != nil {
-				return fmt.Errorf("translating metadata %w", err)
-			}
-		}
-		seen[rows.Kind[i]] = true
 	}
 
 	ma := make(views.Map)

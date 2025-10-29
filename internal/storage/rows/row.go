@@ -35,6 +35,14 @@ type Rows struct {
 	Metadata  [][]byte
 	Exemplar  [][]byte
 	Kind      []keys.Kind
+
+	flags keys.Kind
+}
+
+// Has returns true if r has kind sample. It is a quick way to see if r needs to be
+// translated.
+func (r *Rows) Has(kind keys.Kind) bool {
+	return r.flags&kind == kind
 }
 
 // AppendFloat stores float sample.
@@ -47,6 +55,7 @@ func (r *Rows) AppendFloat(la labels.Labels, ts int64, value float64) {
 	r.Histogram = append(r.Histogram, nil)
 	r.Metadata = append(r.Metadata, nil)
 	r.Exemplar = append(r.Exemplar, nil)
+	r.flags |= keys.Float
 }
 
 // AppendHistogram stores histogram sample.
@@ -59,6 +68,7 @@ func (r *Rows) AppendHistogram(la labels.Labels, ts int64, value []byte) {
 	r.Value = append(r.Value, 0)
 	r.Metadata = append(r.Metadata, nil)
 	r.Exemplar = append(r.Exemplar, nil)
+	r.flags |= keys.Histogram
 }
 
 // AppendExemplar adds exemplar row.
@@ -71,6 +81,7 @@ func (r *Rows) AppendExemplar(la labels.Labels, ts int64, value []byte) {
 	r.Value = append(r.Value, 0)
 	r.Metadata = append(r.Metadata, nil)
 	r.Histogram = append(r.Histogram, nil)
+	r.flags |= keys.Exemplar
 }
 
 func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
@@ -82,6 +93,7 @@ func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
 	r.Value = append(r.Value, 0)
 	r.Histogram = append(r.Histogram, nil)
 	r.Exemplar = append(r.Exemplar, nil)
+	r.flags |= keys.Metadata
 }
 
 // Reset resets r fields and retain capacity.
@@ -93,6 +105,7 @@ func (r *Rows) Reset() {
 	r.Metadata = reset(r.Metadata)
 	r.Exemplar = reset(r.Exemplar)
 	r.Kind = reset(r.Kind)
+	r.flags = 0
 }
 
 func reset[T any](a []T) []T {

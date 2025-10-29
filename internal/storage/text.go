@@ -10,7 +10,9 @@ import (
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/storage/buffer"
+	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/gernest/u128/internal/storage/tsid"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
@@ -26,10 +28,10 @@ var (
 	search        = []byte("index")
 )
 
-func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err error) {
+func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 
 	// we make sure out.B has the same size as labels.
-	size := len(labels)
+	size := len(r.Labels)
 	out.B = slices.Grow(out.B[:0], size)[:size]
 
 	err = db.Update(func(tx *bbolt.Tx) error {
@@ -41,7 +43,7 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err erro
 			if id == 0 {
 				id++
 			}
-			hi = id + uint64(len(labels))
+			hi = id + uint64(len(r.Labels))
 			err = adminB.SetSequence(hi)
 			if err != nil {
 				return fmt.Errorf("creating sequence %w", err)
@@ -52,13 +54,13 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err erro
 		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
 
-		for i := range labels {
-			if i != 0 && bytes.Equal(labels[i], labels[i-1]) {
+		for i := range r.Labels {
+			if i != 0 && bytes.Equal(r.Labels[i], r.Labels[i-1]) {
 				// fast path: ingesting same series with multiple samples.
 				out.B[i] = out.B[i-1]
 				continue
 			}
-			sum := checksum.Hash(labels[i])
+			sum := checksum.Hash(r.Labels[i])
 			if got := metricsSumB.Get(sum[:]); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
@@ -76,7 +78,7 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err erro
 			}
 
 			// Building index
-			for name, value := range buffer.RangeLabels(labels[i]) {
+			for name, value := range buffer.RangeLabels(r.Labels[i]) {
 				labelNameB, err := searchIndexB.CreateBucketIfNotExists(name)
 				if err != nil {
 					return fmt.Errorf("creating label bucket %w", err)
@@ -110,9 +112,28 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err erro
 			}
 
 			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID), labels[i])
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
+			}
+		}
+
+		if r.Has(keys.Histogram) {
+			err = txt2u64(tx.Bucket(histogramData), r.Value, r.Histogram)
+			if err != nil {
+				return err
+			}
+		}
+		if r.Has(keys.Exemplar) {
+			err = txt2u64(tx.Bucket(exemplarData), r.Value, r.Exemplar)
+			if err != nil {
+				return err
+			}
+		}
+		if r.Has(keys.Metadata) {
+			err = txt2u64(tx.Bucket(metaData), r.Value, r.Metadata)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
@@ -120,28 +141,7 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err erro
 	return
 }
 
-func assignU64ToHistograms(db *bbolt.DB, values []uint64, data [][]byte) error {
-	return db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(histogramData)
-		return translate(b, values, data)
-	})
-}
-
-func assignU64ToExemplars(db *bbolt.DB, values []uint64, data [][]byte) error {
-	return db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(exemplarData)
-		return translate(b, values, data)
-	})
-}
-
-func assignU64ToMetadata(db *bbolt.DB, values []uint64, data [][]byte) error {
-	return db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(metaData)
-		return translate(b, values, data)
-	})
-}
-
-func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
+func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 	for i := range data {
 		if len(data[i]) == 0 {
 			continue
