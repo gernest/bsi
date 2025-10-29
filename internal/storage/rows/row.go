@@ -2,18 +2,28 @@ package rows
 
 import (
 	"bytes"
-	"iter"
 	"math"
+	"sync"
 
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type Row struct {
-	Value     uint64
-	Timestamp int64
-	Kind      keys.Kind
+type Pool struct {
+	p sync.Pool
+}
+
+func (p *Pool) Get() *Rows {
+	if v := p.p.Get(); v != nil {
+		return v.(*Rows)
+	}
+	return &Rows{}
+}
+
+func (p *Pool) Put(r *Rows) {
+	r.Reset()
+	p.p.Put(r)
 }
 
 // Rows is an in memory batch of metrics belonging to a single view.
@@ -25,22 +35,6 @@ type Rows struct {
 	Metadata  [][]byte
 	Exemplar  [][]byte
 	Kind      []keys.Kind
-}
-
-// Range iterates over all rows found in r.
-func (r *Rows) Range() iter.Seq2[int, *Row] {
-	return func(yield func(int, *Row) bool) {
-		var o Row
-		for i := range r.Timestamp {
-			o.Value = r.Value[i]
-			o.Timestamp = r.Timestamp[i]
-			o.Kind = r.Kind[i]
-
-			if !yield(i, &o) {
-				return
-			}
-		}
-	}
 }
 
 // AppendFloat stores float sample.

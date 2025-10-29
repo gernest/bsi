@@ -51,13 +51,13 @@ func TestText(t *testing.T) {
 					ids := tsidPool.Get()
 					defer tsidPool.Put(ids)
 
-					err = assignTSID(db, ids, labels)
+					hi, err := assignTSID(db, ids, labels)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)
 						return ""
 					}
-
+					fmt.Fprintln(&o, hi)
 					for i := range ids.B {
 						fmt.Fprintln(&o, &ids.B[i])
 					}

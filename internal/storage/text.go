@@ -5,16 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"iter"
-	"os"
-	"path/filepath"
 	"slices"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/checksum"
-	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/magic"
-	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/gernest/u128/internal/storage/tsid"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
@@ -30,82 +26,28 @@ var (
 	search        = []byte("index")
 )
 
-type textKey struct {
-	column checksum.U128
-	view   rows.View
-}
-
-func (t textKey) String() string {
-	return t.Path("")
-}
-
-func (t textKey) Path(base string) string {
-	return filepath.Join(
-		base,
-		fmt.Sprintf("%s_%x", t.view, t.column),
-	)
-}
-
-type dataPath struct {
-	Path string
-}
-
-func openTxt(key rbf.View, opts dataPath) (*bbolt.DB, error) {
-	file := filepath.Join(key.Path(opts.Path), "txt")
-	err := os.MkdirAll(filepath.Dir(file), 0755)
-	if err != nil {
-		return nil, err
-	}
-	_, err = os.Stat(file)
-	created := os.IsNotExist(err)
-	db, err := bbolt.Open(file, 0600, nil)
-	if err != nil {
-		return nil, err
-	}
-	if created {
-		db.Update(func(tx *bbolt.Tx) error {
-			_, err = tx.CreateBucket(admin)
-			if err != nil {
-				return fmt.Errorf("creating sum bucket %w", err)
-			}
-			_, err = tx.CreateBucket(metricsSum)
-			if err != nil {
-				return fmt.Errorf("creating sum bucket %w", err)
-			}
-			_, err = tx.CreateBucket(metricsData)
-			if err != nil {
-				return fmt.Errorf("creating data bucket %w", err)
-			}
-			_, err = tx.CreateBucket(histogramData)
-			if err != nil {
-				return fmt.Errorf("creating histogram bucket %w", err)
-			}
-			_, err = tx.CreateBucket(exemplarData)
-			if err != nil {
-				return fmt.Errorf("creating exemplar bucket %w", err)
-			}
-			_, err = tx.CreateBucket(metaData)
-			if err != nil {
-				return fmt.Errorf("creating metadata bucket %w", err)
-			}
-			_, err = tx.CreateBucket(search)
-			if err != nil {
-				return fmt.Errorf("creating search bucket %w", err)
-			}
-			return nil
-		})
-	}
-
-	return db, nil
-}
-
-func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
+func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) (hi uint64, err error) {
 
 	// we make sure out.B has the same size as labels.
 	size := len(labels)
 	out.B = slices.Grow(out.B[:0], size)[:size]
 
-	return db.Update(func(tx *bbolt.Tx) error {
+	err = db.Update(func(tx *bbolt.Tx) error {
+
+		// create new sequence
+		{
+			adminB := tx.Bucket(admin)
+			id := adminB.Sequence()
+			if id == 0 {
+				id++
+			}
+			hi = id + uint64(len(labels))
+			err = adminB.SetSequence(hi)
+			if err != nil {
+				return fmt.Errorf("creating sequence %w", err)
+			}
+		}
+
 		metricsSumB := tx.Bucket(metricsSum)
 		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
@@ -175,9 +117,10 @@ func assignTSID(db *bbolt.DB, out *tsid.B, labels [][]byte) error {
 		}
 		return nil
 	})
+	return
 }
 
-func assignU64ToHistogams(db *bbolt.DB, values []uint64, data [][]byte) error {
+func assignU64ToHistograms(db *bbolt.DB, values []uint64, data [][]byte) error {
 	return db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(histogramData)
 		return translate(b, values, data)
@@ -217,7 +160,6 @@ func translate(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 }
 
 func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
-
 	cu := b.Cursor()
 	var lo, hi [8]byte
 	for a, b := range rangeSetsRa(all) {

@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+var rowsPool rows.Pool
+
 // API implements prometheus storage api on top of our own timeseries database.
 type API struct {
 	db *db.Store
@@ -26,12 +28,12 @@ var _ storage.Appendable = (*API)(nil)
 func (a *API) Appender(_ context.Context) storage.Appender {
 	return &appender{
 		db:  a.db,
-		set: make(rows.Set),
+		set: rowsPool.Get(),
 	}
 }
 
 type appender struct {
-	set rows.Set
+	set *rows.Rows
 	db  *db.Store
 }
 
@@ -41,20 +43,18 @@ func (w *appender) SetOptions(_ *storage.AppendOptions) {
 }
 
 func (w *appender) Rollback() error {
-	w.set.Release()
+	if w.set != nil {
+		rowsPool.Put(w.set)
+		w.set = nil
+	}
 	return nil
 }
 
 func (w *appender) Commit() error {
-	defer w.set.Release()
-
-	for k, v := range w.set {
-		err := w.db.AddRows(k, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	err := w.db.AddRows(w.set)
+	rowsPool.Put(w.set)
+	w.set = nil
+	return err
 }
 
 func (w *appender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, t, ct int64) (storage.SeriesRef, error) {
@@ -70,7 +70,7 @@ func (w *appender) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, m metada
 		Help:             m.Help,
 	}
 	data, _ := meta.Marshal()
-	w.set.Get(t.ISOWeek()).AppendMetadata(l, t.UnixMilli(), data)
+	w.set.AppendMetadata(l, t.UnixMilli(), data)
 	return 0, nil
 }
 
@@ -83,7 +83,7 @@ func (w *appender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64
 		hs = prompb.FromFloatHistogram(t, fh)
 	}
 	data, _ := hs.Marshal()
-	w.set.GetUnixMilli(t).AppendHistogram(l, t, data)
+	w.set.AppendHistogram(l, t, data)
 	return 0, nil
 }
 
@@ -101,11 +101,11 @@ func (w *appender) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exempl
 	if err != nil {
 		return 0, err
 	}
-	w.set.GetUnixMilli(e.Ts).AppendExemplar(l, e.Ts, data)
+	w.set.AppendExemplar(l, e.Ts, data)
 	return 0, nil
 }
 
 func (w *appender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	w.set.GetUnixMilli(t).AppendFloat(l, t, v)
+	w.set.AppendFloat(l, t, v)
 	return 0, nil
 }

@@ -1,20 +1,23 @@
 package storage
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"math/bits"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"sync"
 
+	"github.com/gernest/roaring"
+	"github.com/gernest/roaring/shardwidth"
+	"github.com/gernest/u128/internal/bitmaps"
+	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/keys"
+	"github.com/gernest/u128/internal/storage/magic"
 	"github.com/gernest/u128/internal/storage/rows"
 	"github.com/gernest/u128/internal/storage/seq"
-	"github.com/gernest/u128/internal/storage/single"
 	"github.com/gernest/u128/internal/storage/tsid"
-	"github.com/google/btree"
 	"go.etcd.io/bbolt"
 )
 
@@ -22,12 +25,8 @@ var tsidPool tsid.Pool
 
 // Store implements timeseries database.
 type Store struct {
-	tree     *btree.BTreeG[rbf.View]
-	rbf      single.Group[rbf.View, *rbf.DB, dataPath]
-	txt      single.Group[rbf.View, *bbolt.DB, dataPath]
-	dataPath string
-	seq      seq.Seq
-	mu       sync.RWMutex
+	rbf *rbf.DB
+	txt *bbolt.DB
 }
 
 // Init initializes store on dataPath.
@@ -36,83 +35,80 @@ func (db *Store) Init(dataPath string) error {
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
 	}
-	err = db.seq.Init(filepath.Join(dataPath, "seq"))
-	if err != nil {
-		return fmt.Errorf("setup sequence %w", err)
-	}
-	db.rbf.Init(db.openRBF)
-	db.txt.Init(openTxt)
-
-	db.tree = btree.NewG(8, func(a, b rbf.View) bool {
-		return a.Compare(&b) < 0
-	})
-	all, err := os.ReadDir(dataPath)
+	db.rbf = rbf.NewDB(dataPath, nil)
+	err = db.rbf.Open()
 	if err != nil {
 		return err
 	}
-	for _, f := range all {
-		if !f.IsDir() {
-			continue
-		}
-		year, week, _ := strings.Cut(f.Name(), "_")
-		yy, err := strconv.Atoi(year)
-		if err != nil {
-			return fmt.Errorf("parsing year %w", err)
-		}
-		ww, err := strconv.Atoi(week)
-		if err != nil {
-			return fmt.Errorf("parsing week %w", err)
-		}
-		db.tree.ReplaceOrInsert(rbf.View{
-			Year: uint16(yy),
-			Week: uint8(ww),
-		})
+	tdb, err := bbolt.Open(filepath.Join(dataPath, "txt"), 0600, nil)
+	if err != nil {
+		return err
 	}
+
+	tdb.Update(func(tx *bbolt.Tx) error {
+		_, err = tx.CreateBucket(admin)
+		if err != nil {
+			return fmt.Errorf("creating sum bucket %w", err)
+		}
+		_, err = tx.CreateBucket(metricsSum)
+		if err != nil {
+			return fmt.Errorf("creating sum bucket %w", err)
+		}
+		_, err = tx.CreateBucket(metricsData)
+		if err != nil {
+			return fmt.Errorf("creating data bucket %w", err)
+		}
+		_, err = tx.CreateBucket(histogramData)
+		if err != nil {
+			return fmt.Errorf("creating histogram bucket %w", err)
+		}
+		_, err = tx.CreateBucket(exemplarData)
+		if err != nil {
+			return fmt.Errorf("creating exemplar bucket %w", err)
+		}
+		_, err = tx.CreateBucket(metaData)
+		if err != nil {
+			return fmt.Errorf("creating metadata bucket %w", err)
+		}
+		_, err = tx.CreateBucket(search)
+		if err != nil {
+			return fmt.Errorf("creating search bucket %w", err)
+		}
+		return nil
+	})
+
+	db.txt = tdb
+
 	return nil
 }
 
 // Close implements storage.Storage.
 func (db *Store) Close() error {
-	return db.seq.Close()
+	return errors.Join(
+		db.txt.Close(), db.rbf.Close(),
+	)
 }
 
 // StartTime implements storage.Storage.
-func (db *Store) StartTime() (int64, error) {
-	db.mu.RLock()
-	var first rbf.View
-	db.tree.Ascend(func(item rbf.View) bool {
-		first = item
-		return false
+func (db *Store) StartTime() (ts int64, err error) {
+	err = db.txt.View(func(tx *bbolt.Tx) error {
+		adminB := tx.Bucket(admin)
+		_, v := adminB.Cursor().First()
+		if v != nil {
+			ts = magic.ReinterpretSlice[Shard](v)[0].Min
+		}
+		return nil
 	})
-	db.mu.RUnlock()
-	if first.IsEmpty() {
-		return 0, nil
-	}
-	da, done, err := db.rbf.Do(first, dataPath{Path: db.dataPath})
-	if err != nil {
-		return 0, fmt.Errorf("opening view database %w", err)
-	}
-	defer done.Close()
-
-	return startTimestamp(da)
+	return
 }
 
 // AddRows index and store rows.
-func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
-	da, done, err := db.txt.Do(view, dataPath{Path: db.dataPath})
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-	hi, err := db.seq.Allocate(uint64(len(rows.Timestamp)))
-	if err != nil {
-		return fmt.Errorf("assigning ids to rows %w", err)
-	}
+func (db *Store) AddRows(rows *rows.Rows) error {
 
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)
 
-	err = assignTSID(da, ids, rows.Labels)
+	hi, err := assignTSID(db.txt, ids, rows.Labels)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -127,17 +123,17 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		}
 		switch rows.Kind[i] {
 		case keys.Histogram:
-			err = assignU64ToHistogams(da, rows.Value, rows.Histogram)
+			err = assignU64ToHistograms(db.txt, rows.Value, rows.Histogram)
 			if err != nil {
 				return fmt.Errorf("translating histograms %w", err)
 			}
 		case keys.Exemplar:
-			err = assignU64ToExemplars(da, rows.Value, rows.Exemplar)
+			err = assignU64ToExemplars(db.txt, rows.Value, rows.Exemplar)
 			if err != nil {
 				return fmt.Errorf("translating exemplars %w", err)
 			}
 		case keys.Metadata:
-			err = assignU64ToMetadata(da, rows.Value, rows.Metadata)
+			err = assignU64ToMetadata(db.txt, rows.Value, rows.Metadata)
 			if err != nil {
 				return fmt.Errorf("translating metadata %w", err)
 			}
@@ -145,34 +141,170 @@ func (db *Store) AddRows(view rows.View, rows *rows.Rows) error {
 		seen[rows.Kind[i]] = true
 	}
 
-	ma := make(rbf.Map)
+	ma := make(shardMap)
 
-	start := hi - uint64(len(rows.Timestamp))
+	lo := hi - uint64(len(rows.Timestamp))
 
-	for i, row := range rows.Range() {
-		buildIndex(ma, &ids.B[i], start+uint64(i), row.Timestamp, row.Value, row.Kind)
+	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
+		shard := se.Lo / shardwidth.ShardWidth
+		offset := start + int(se.Hi-se.Lo) - 1
+		sx := ma.Get(shard)
+		sx.AddTS(se.Lo, rows.Timestamp[start:offset])
+		sx.AddValues(se.Lo, rows.Value[start:offset])
+		sx.AddKind(se.Lo, rows.Kind[start:offset])
+		sx.AddIndex(se.Lo, ids.B[start:offset])
 	}
 
-	return db.apply(view, ma)
+	err = db.apply(ma)
+	if err != nil {
+		return err
+	}
+	return db.saveMetadata(ma)
 }
 
-func (db *Store) apply(view rbf.View, ma rbf.Map) error {
-	da, done, err := db.rbf.Do(view, dataPath{Path: db.dataPath})
-	if err != nil {
-		return fmt.Errorf("opening view database %w", err)
-	}
-	defer done.Close()
-	tx, err := da.Begin(true)
+func (db *Store) saveMetadata(ma shardMap) error {
+	var key [8]byte
+	return db.txt.Update(func(tx *bbolt.Tx) error {
+		adminB := tx.Bucket(admin)
+
+		for shard, data := range ma {
+			binary.BigEndian.PutUint64(key[:], shard)
+			if v := adminB.Get(key[:]); v != nil {
+				data.shard.Update(&magic.ReinterpretSlice[Shard](v)[0])
+			}
+			err := adminB.Put(key[:], data.shard.Bytes())
+			if err != nil {
+				return fmt.Errorf("updating shard data %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (db *Store) apply(ma shardMap) error {
+
+	tx, err := db.rbf.Begin(true)
 	if err != nil {
 		return fmt.Errorf("creating write transaction %w", err)
 	}
 	defer tx.Rollback()
-	for k, v := range ma {
-		v.Optimize()
-		_, err = tx.AddRoaring(k, v)
-		if err != nil {
-			return fmt.Errorf("writing bitmap %w", err)
+	for shard, v := range ma {
+
+		for col, ra := range v.ra {
+			ra.Optimize()
+			_, err = tx.AddRoaring(rbf.Key{Column: col, Shard: shard}, ra)
+			if err != nil {
+				return fmt.Errorf("writing bitmap %w", err)
+			}
 		}
 	}
 	return tx.Commit()
+}
+
+type Shard struct {
+	Min         int64
+	Max         int64
+	MaxID       uint64
+	TsDepth     uint8
+	ValueDepth  uint8
+	KindDepth   uint8
+	LabelsDepth uint8
+}
+
+func (s *Shard) InRange(lo, hi int64) bool {
+	return lo < s.Max && hi > s.Min
+}
+
+func (s *Shard) Update(other *Shard) {
+	if s.Min == 0 {
+		s.Min = other.Min
+	}
+	s.Min = min(s.Min, other.Min)
+	s.Max = max(s.Max, other.Max)
+	s.MaxID = max(s.MaxID, other.MaxID)
+	s.TsDepth = max(s.TsDepth, other.TsDepth)
+	s.ValueDepth = max(s.ValueDepth, other.ValueDepth)
+}
+
+func (s Shard) Bytes() []byte {
+	return magic.ReinterpretSlice[byte]([]Shard{s})
+}
+
+type shardMap map[uint64]*shardData
+
+func (s shardMap) Get(shard uint64) *shardData {
+	r, ok := s[shard]
+	if !ok {
+		r = &shardData{ra: make(map[checksum.U128]*roaring.Bitmap)}
+		s[shard] = r
+	}
+	return r
+}
+
+type shardData struct {
+	shard Shard
+	ra    map[checksum.U128]*roaring.Bitmap
+}
+
+func (s *shardData) AddIndex(start uint64, values []tsid.ID) {
+	labels := s.Get(keys.MetricsLabels)
+	var hi uint64
+
+	for i := range values {
+		la := &values[i]
+		id := start + uint64(i)
+		hi = max(la.ID, hi)
+		bitmaps.BSI(labels, id, int64(la.ID))
+		for j := range la.Views {
+			bitmaps.Mutex(s.Get(la.Views[j]), id, la.Rows[j])
+		}
+	}
+	s.shard.LabelsDepth = uint8(bits.Len64(hi)) + 1
+
+}
+
+func (s *shardData) AddTS(start uint64, values []int64) {
+	ra := s.Get(keys.MetricsTimestamp)
+	var lo, hi int64
+
+	for i := range values {
+		if lo == 0 {
+			lo = values[i]
+		}
+		lo = min(lo, values[i])
+		hi = max(hi, values[i])
+		bitmaps.BSI(ra, start+uint64(i), values[i])
+	}
+	s.shard.Min = lo
+	s.shard.Max = hi
+	s.shard.TsDepth = uint8(bits.Len64(max(uint64(lo), uint64(hi)))) + 1
+}
+
+func (s *shardData) AddValues(start uint64, values []uint64) {
+	ra := s.Get(keys.MetricsTimestamp)
+	var hi uint64
+	for i := range values {
+		hi = max(hi, values[i])
+		bitmaps.BSI(ra, start+uint64(i), int64(values[i]))
+	}
+	s.shard.ValueDepth = uint8(bits.Len64(hi)) + 1
+}
+
+func (s *shardData) AddKind(start uint64, values []keys.Kind) {
+	ra := s.Get(keys.MetricsTimestamp)
+	var hi keys.Kind
+	for i := range values {
+		hi = max(hi, values[i])
+		bitmaps.BSI(ra, start+uint64(i), int64(values[i]))
+	}
+	s.shard.KindDepth = uint8(bits.Len64(uint64(hi))) + 1
+}
+
+func (s *shardData) Get(col checksum.U128) *roaring.Bitmap {
+	r, ok := s.ra[col]
+	if !ok {
+		r = roaring.NewMapBitmap()
+		s.ra[col] = r
+	}
+	return r
 }

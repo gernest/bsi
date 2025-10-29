@@ -1,59 +1,74 @@
 package seq
 
 import (
-	"encoding/binary"
-	"os"
-	"sync"
+	"fmt"
+	"iter"
+
+	"github.com/gernest/roaring/shardwidth"
 )
 
-// Seq allocates monotonically increasing sequences. Used to assign record ids.
-type Seq struct {
-	f     *os.File
-	value uint64
-	mu    sync.Mutex
-	buf   [8]byte
+// Sequence is a range of consecutive uint64. The upper bound Hi is exclusive.
+type Sequence struct {
+	Lo, Hi uint64
 }
 
-func (s *Seq) Init(name string) error {
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return err
+func (s Sequence) FullShard() bool {
+	return s.Lo/shardwidth.ShardWidth != s.Hi/shardwidth.ShardWidth
+}
+
+func (s *Sequence) Next() (o Sequence) {
+	o = *s
+	if s.IsEmpty() {
+		return Sequence{}
 	}
-	s.f = f
-	stat, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return err
+	shard := s.Lo / shardwidth.ShardWidth
+	offset := (shard + 1) * shardwidth.ShardWidth
+	if s.Hi < offset {
+		*s = Sequence{}
+		return
 	}
-	if stat.Size() == 8 {
-		_, err := f.Read(s.buf[:])
-		if err != nil {
-			f.Close()
-			return err
+	s.Lo = offset
+	o.Hi = offset
+	return
+}
+
+func (s Sequence) String() string {
+	return fmt.Sprintf("%v...%v", s.Lo, s.Hi)
+}
+
+// IsEmpty return true if seq is not set.
+func (s Sequence) IsEmpty() bool {
+	return s == Sequence{}
+}
+
+// Range generates sequences, yielding position and value. Position starts at 0.
+func (s *Sequence) Range() iter.Seq2[int, uint64] {
+	return func(yield func(int, uint64) bool) {
+		var i int
+		for x := s.Lo; x < s.Hi; x++ {
+			if !yield(i, x) {
+				/// reset lo position
+				s.Lo = x
+				return
+			}
+			i++
 		}
-		s.value = binary.BigEndian.Uint64(s.buf[:])
+		*s = Sequence{}
 	}
-	if s.value == 0 {
-		// counting always starts from 1
-		s.value++
-	}
-	return nil
 }
 
-func (s *Seq) Close() error {
-	return s.f.Close()
-}
-
-func (s *Seq) Allocate(size uint64) (uint64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.value += size
-	binary.BigEndian.PutUint64(s.buf[:], s.value)
-	_, err := s.f.WriteAt(s.buf[:], 0)
-	if err != nil {
-		return 0, err
+// RangeShardSequence iterates over sequences yielding shard occurrence with the
+// starting position. The position stats from 0 which points to the first se.Lo value.
+//
+// Used for iterating in shard batches without allocation.
+func RangeShardSequence(se Sequence) iter.Seq2[int, Sequence] {
+	var i int
+	return func(yield func(int, Sequence) bool) {
+		for nxt := se.Next(); !nxt.IsEmpty(); nxt = se.Next() {
+			if !yield(i, nxt) {
+				return
+			}
+			i += int(nxt.Hi - nxt.Lo)
+		}
 	}
-	s.f.Sync()
-	return s.value, nil
 }

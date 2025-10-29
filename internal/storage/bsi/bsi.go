@@ -153,12 +153,31 @@ func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 	result = make(map[uint64]uint64)
 	exists := b.exists.Intersect(filters)
 	mergeBits(exists, 0, result)
-	mergeBits(b.sign.Intersect(filters), 1<<63, result)
+	mergeBits(b.sign.Intersect(exists), 1<<63, result)
 	for i := range b.data {
 		mergeBits(b.data[i].Intersect(exists), 1<<i, result)
 	}
 	for k, val := range result {
 		result[k] = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))
+	}
+	return
+}
+
+func (b *BSI) Transpose(filters *roaring.Bitmap) (ra *roaring.Bitmap) {
+	result := make(map[uint64]uint64)
+	exists := b.exists
+	if filters != nil {
+		exists.Intersect(filters)
+	}
+
+	mergeBits(exists, 0, result)
+	mergeBits(b.sign.Intersect(exists), 1<<63, result)
+	for i := range b.data {
+		mergeBits(b.data[i].Intersect(exists), 1<<i, result)
+	}
+	ra = roaring.NewBitmap()
+	for _, val := range result {
+		ra.DirectAdd(uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63))))
 	}
 	return
 }
