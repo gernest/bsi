@@ -135,9 +135,6 @@ func (db *Store) applyTranslation(result *samples.Samples) error {
 		if ra := result.KindBSI.GetColumns(int64(keys.Exemplar), nil); ra.Any() {
 			readData(tx, exemplarData, ra)
 		}
-		if ra := result.KindBSI.GetColumns(int64(keys.Metadata), nil); ra.Any() {
-			readData(tx, metaData, result.ValuesBSI.Transpose(ra))
-		}
 
 		series := result.LabelsBSI.AsMap(nil)
 

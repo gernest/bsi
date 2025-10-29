@@ -78,46 +78,58 @@ type Data struct {
 	Columns map[checksum.U128]*roaring.Bitmap
 }
 
-func (s *Data) AddIndex(start uint64, values []tsid.ID) {
+func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 	labels := s.Get(keys.MetricsLabels)
 	var hi uint64
-
+	id := start
 	for i := range values {
+		if kinds[i] == keys.None {
+			continue
+		}
 		la := &values[i]
-		id := start + uint64(i)
 		hi = max(la.ID, hi)
 		bitmaps.BSI(labels, id, int64(la.ID))
 		for j := range la.Views {
 			bitmaps.Mutex(s.Get(la.Views[j]), id, la.Rows[j])
 		}
+		id++
 	}
 	s.Meta.LabelsDepth = uint8(bits.Len64(hi)) + 1
 
 }
 
-func (s *Data) AddTS(start uint64, values []int64) {
+func (s *Data) AddTS(start uint64, values []int64, kinds []keys.Kind) {
 	ra := s.Get(keys.MetricsTimestamp)
 	var lo, hi int64
-
+	id := start
 	for i := range values {
+		if kinds[i] == keys.None {
+			continue
+		}
 		if lo == 0 {
 			lo = values[i]
 		}
 		lo = min(lo, values[i])
 		hi = max(hi, values[i])
-		bitmaps.BSI(ra, start+uint64(i), values[i])
+		bitmaps.BSI(ra, id, values[i])
+		id++
 	}
 	s.Meta.Min = lo
 	s.Meta.Max = hi
 	s.Meta.TsDepth = uint8(bits.Len64(max(uint64(lo), uint64(hi)))) + 1
 }
 
-func (s *Data) AddValues(start uint64, values []uint64) {
+func (s *Data) AddValues(start uint64, values []uint64, kinds []keys.Kind) {
 	ra := s.Get(keys.MetricsTimestamp)
 	var hi uint64
+	id := start
 	for i := range values {
+		if kinds[i] == keys.None {
+			continue
+		}
 		hi = max(hi, values[i])
-		bitmaps.BSI(ra, start+uint64(i), int64(values[i]))
+		bitmaps.BSI(ra, id, int64(values[i]))
+		id++
 	}
 	s.Meta.ValueDepth = uint8(bits.Len64(hi)) + 1
 }
@@ -125,9 +137,14 @@ func (s *Data) AddValues(start uint64, values []uint64) {
 func (s *Data) AddKind(start uint64, values []keys.Kind) {
 	ra := s.Get(keys.MetricsTimestamp)
 	var hi keys.Kind
+	id := start
 	for i := range values {
+		if values[i] == keys.None {
+			continue
+		}
 		hi = max(hi, values[i])
-		bitmaps.BSI(ra, start+uint64(i), int64(values[i]))
+		bitmaps.BSI(ra, id, int64(values[i]))
+		id++
 	}
 	s.Meta.KindDepth = uint8(bits.Len64(uint64(hi))) + 1
 }

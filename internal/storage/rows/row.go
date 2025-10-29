@@ -36,7 +36,17 @@ type Rows struct {
 	Exemplar  [][]byte
 	Kind      []keys.Kind
 
+	none  int
 	flags keys.Kind
+}
+
+func (r *Rows) Size() int {
+	return len(r.Labels) - r.none
+}
+
+func (r *Rows) Delete(i int) {
+	r.Kind[i] = keys.None
+	r.none++
 }
 
 // Has returns true if r has kind sample. It is a quick way to see if r needs to be

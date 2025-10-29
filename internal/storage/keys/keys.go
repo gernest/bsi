@@ -20,7 +20,8 @@ var (
 type Kind byte
 
 const (
-	Float Kind = iota + 1
+	None Kind = iota
+	Float
 	Histogram
 	Exemplar
 	Metadata

@@ -6,6 +6,7 @@
         "chunkenc",
         "datadriven",
         "gernest",
+        "labelset",
         "shardwidth",
         "TSID"
     ]

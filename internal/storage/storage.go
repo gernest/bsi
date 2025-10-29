@@ -111,16 +111,16 @@ func (db *Store) AddRows(rows *rows.Rows) error {
 
 	ma := make(views.Map)
 
-	lo := hi - uint64(len(rows.Timestamp))
+	lo := hi - uint64(rows.Size())
 
 	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
 		shard := se.Lo / shardwidth.ShardWidth
 		offset := start + int(se.Hi-se.Lo) - 1
 		sx := ma.Get(shard)
-		sx.AddTS(se.Lo, rows.Timestamp[start:offset])
-		sx.AddValues(se.Lo, rows.Value[start:offset])
+		sx.AddTS(se.Lo, rows.Timestamp[start:offset], rows.Kind)
+		sx.AddValues(se.Lo, rows.Value[start:offset], rows.Kind)
 		sx.AddKind(se.Lo, rows.Kind[start:offset])
-		sx.AddIndex(se.Lo, ids.B[start:offset])
+		sx.AddIndex(se.Lo, ids.B[start:offset], rows.Kind)
 	}
 
 	err = db.apply(ma)

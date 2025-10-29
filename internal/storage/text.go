@@ -131,14 +131,54 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 			}
 		}
 		if r.Has(keys.Metadata) {
-			err = txt2u64(tx.Bucket(metaData), r.Value, r.Metadata)
-			if err != nil {
-				return err
+			metaB := tx.Bucket(metaData)
+
+			// Unlike other sample types, we only need to store mapping between metric name
+			// and metadata found. There is no need to store anything in RBF, this data
+			// can be retrieved directly from txt database.
+			var lastMeta, lastLabels []byte
+
+			for i := range r.Metadata {
+				if r.Kind[i] != keys.Metadata {
+					continue
+				}
+				if i != 0 && bytes.Equal(lastLabels, r.Labels[i]) && bytes.Equal(lastMeta, r.Metadata[i]) {
+					r.Delete(i)
+					continue
+				}
+
+				lastMeta = r.Metadata[i]
+				lastLabels = r.Labels[i]
+
+				for key, value := range buffer.RangeLabels(lastLabels) {
+					if magic.String(key) == labels.MetricName {
+						err = metaB.Put(value, lastMeta)
+						if err != nil {
+							return fmt.Errorf("storing metadata value %w", err)
+						}
+						break
+					}
+				}
+				r.Delete(i)
 			}
+
 		}
 		return nil
 	})
 	return
+}
+
+func readMetadata(db *bbolt.DB, name []byte, cb func(name, value []byte) error) error {
+	return db.View(func(tx *bbolt.Tx) error {
+		metaB := tx.Bucket(metaData)
+		if len(name) > 0 {
+			v := metaB.Get(name)
+			if v != nil {
+				return cb(name, v)
+			}
+		}
+		return metaB.ForEach(cb)
+	})
 }
 
 func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
