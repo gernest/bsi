@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	db "github.com/gernest/u128/internal/storage"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 var rowsPool rows.Pool
@@ -62,6 +64,13 @@ func (w *appender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, t, c
 }
 
 func (w *appender) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
 	t := time.Now()
 	meta := prompb.MetricMetadata{
 		Type:             prompb.FromMetadataType(m.Type),
@@ -75,6 +84,25 @@ func (w *appender) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, m metada
 }
 
 func (w *appender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if err := h.Validate(); err != nil {
+			return 0, err
+		}
+	}
+
+	if fh != nil {
+		if err := fh.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
+
 	var hs prompb.Histogram
 	if h != nil {
 		hs = prompb.FromIntHistogram(t, h)
@@ -92,6 +120,13 @@ func (w *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 }
 
 func (w *appender) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
 	exe := prompb.Exemplar{
 		Labels:    prompb.FromLabels(e.Labels, nil),
 		Value:     e.Value,
@@ -106,6 +141,14 @@ func (w *appender) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exempl
 }
 
 func (w *appender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
 	w.set.AppendFloat(l, t, v)
 	return 0, nil
 }
