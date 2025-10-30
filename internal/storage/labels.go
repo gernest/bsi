@@ -14,13 +14,17 @@ import (
 )
 
 // LabelValues implements storage.LabelQuerier.
+//
+// Label are stored in search bucket, with label names used as sub bucket containing (value, uint64) tuples.
+// Unlike prometheus, labels are not scoped by time. This will always return global observed values for name.
 func (db *Store) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var values []string
 	err := db.txt.View(func(tx *bbolt.Tx) error {
 		searchB := tx.Bucket(search)
-
 		b := searchB.Bucket(magic.Slice(name))
 		if b != nil {
+			// We have label values observed for the given name. Iterating on keys
+			// yields label values.
 			limit := math.MaxInt
 			if hints != nil {
 				limit = hints.Limit
@@ -50,7 +54,10 @@ func (db *Store) LabelValues(_ context.Context, name string, hints *storage.Labe
 	return values, nil, nil
 }
 
-// LabelNames implements storage.LabelQuerier
+// LabelNames implements storage.LabelQuerier.
+//
+// Unlike prometheus, returned names are tot scoped time. We always return global observed label
+// names.
 func (db *Store) LabelNames(_ context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var names []string
 	err := db.txt.View(func(tx *bbolt.Tx) error {

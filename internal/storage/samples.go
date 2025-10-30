@@ -111,7 +111,7 @@ func (db *Store) translate(result *samples.Samples) error {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
 		if ra := result.KindBSI.GetColumns(int64(keys.Exemplar), nil); ra.Any() {
-			readData(tx, exemplarData, ra)
+			readData(tx, exemplarData, result.ValuesBSI.Transpose(ra))
 		}
 
 		series := result.LabelsBSI.AsMap(nil)
