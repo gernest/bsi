@@ -65,18 +65,21 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 			if got := metricsSumB.Get(sum); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
-				out.B[i].Decode(got)
+				out.B[i] = append(out.B[i][:0], magic.ReinterpretSlice[tsid.Column](got)...)
 				continue
 			}
 
 			// generate tsid
-			id := &out.B[i]
-			id.Reset()
+			id := out.B[i][:0]
+
 			var err error
-			id.ID, err = metricsSumB.NextSequence()
+			tid, err := metricsSumB.NextSequence()
 			if err != nil {
 				return fmt.Errorf("generating metrics sequence %w", err)
 			}
+			id = append(id, tsid.Column{
+				Value: tid,
+			})
 
 			// Building index
 			for name, value := range buffer.RangeLabels(r.Labels[i]) {
@@ -88,8 +91,10 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
-					id.Columns = append(id.Columns, view)
-					id.Rows = append(id.Rows, binary.BigEndian.Uint64(got))
+					id = append(id, tsid.Column{
+						ID:    view,
+						Value: binary.BigEndian.Uint64(got),
+					})
 				} else {
 					// slow path: assign unique id to value
 					nxt, err := labelNameB.NextSequence()
@@ -100,20 +105,22 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					id.Columns = append(id.Columns, view)
-					id.Rows = append(id.Rows, nxt)
+					id = append(id, tsid.Column{
+						ID:    view,
+						Value: nxt,
+					})
 				}
-
+				out.B[i] = id
 			}
 
 			// 2. store checksum => tsid in checksums bucket
-			err = metricsSumB.Put(sum[:], id.Encode())
+			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](id))
 			if err != nil {
 				return fmt.Errorf("storing metrics checksum %w", err)
 			}
 
 			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID), r.Labels[i])
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID()), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
 			}

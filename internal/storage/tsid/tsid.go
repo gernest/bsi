@@ -1,28 +1,25 @@
+// Package tsid defines api for working with timeseries samples. We assign unique
+// identifiers for time series that are used throughout our RBF storage.
+//
+// To speed up ingestion , once processed TSID are serialized in a way that can be
+// reused when we find the same series.
 package tsid
 
 import (
-	"bytes"
-	"encoding/binary"
-	"fmt"
 	"sync"
-
-	"github.com/gernest/u128/internal/storage/buffer"
-	"github.com/gernest/u128/internal/storage/magic"
-	"github.com/gernest/u128/internal/storage/prefix"
 )
 
-var (
-	bytesPool buffer.Pool
-)
-
+// B is reusable buffer of ID.
 type B struct {
 	B []ID
 }
 
+// Pool pools B instances to avoid excessive allocations.
 type Pool struct {
 	pool sync.Pool
 }
 
+// Get creates anew B instance or returns existing one from the pool.
 func (p *Pool) Get() *B {
 	v := p.pool.Get()
 	if v != nil {
@@ -31,53 +28,25 @@ func (p *Pool) Get() *B {
 	return new(B)
 }
 
+// Put returns b to the pool, retaining b capacity.
 func (p *Pool) Put(b *B) {
 	b.B = b.B[:0]
 	p.pool.Put(b)
 }
 
-// ID is a unique identifier for metrics group that is used for indexing. This is only
-// used during ingestion. The uint64 value in ID field is the one used during search,
-// the rest of the fields are here to speed up ingestion.
-type ID struct {
-	Columns []uint64
-	Rows    []uint64
-	ID      uint64
+// ID stores assigned identifiers for time series. The first Column is for the assigned
+// uint64 for the whole series, the rest are (column, assigned_uint64_for_the_value) tuple
+// for each series label where column=label name and  assigned_uint64=label value.
+type ID []Column
+
+// Column Identifies a prometheus label (name, value) tuple as uint64, to be used
+// in RBF storage.
+type Column struct {
+	ID    uint64
+	Value uint64
 }
 
-func (id ID) String() string {
-	var o bytes.Buffer
-	fmt.Fprintf(&o, "%d", id.ID)
-	for i := range id.Columns {
-		fmt.Fprintf(&o, " %x=%d", id.Columns[i], id.Rows[i])
-	}
-	return o.String()
-}
-
-func (id *ID) Reset() {
-	id.Columns = id.Columns[:0]
-	id.Rows = id.Rows[:0]
-	id.ID = 0
-}
-
-// Encode serialize id into w buffer.
-func (id *ID) Encode() []byte {
-	w := bytesPool.Get()
-	defer bytesPool.Put(w)
-
-	w.B = binary.AppendUvarint(w.B, id.ID)
-	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Columns))
-	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Rows))
-	return bytes.Clone(w.B)
-}
-
-// Decode unpacks data into id.
-func (id *ID) Decode(data []byte) {
-	var n int
-	id.ID, n = binary.Uvarint(data)
-	data = data[n:]
-	views, left := prefix.Decode(data)
-	id.Columns = append(id.Columns, magic.ReinterpretSlice[uint64](views)...)
-	rows, _ := prefix.Decode(left)
-	id.Rows = append(id.Rows[:0], magic.ReinterpretSlice[uint64](rows)...)
+// ID helper method to return series ID.
+func (id ID) ID() uint64 {
+	return id[0].Value
 }
