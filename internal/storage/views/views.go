@@ -44,8 +44,8 @@ func (v *List) Reset() {
 }
 
 type Search struct {
-	Column uint64
 	Value  []uint64
+	Column uint64
 	Depth  uint8
 	OP     bitmaps.OP
 }
@@ -91,8 +91,8 @@ func (s Map) Get(shard uint64) *Data {
 }
 
 type Data struct {
-	Meta    Meta
 	Columns map[uint64]*roaring.Bitmap
+	Meta    Meta
 }
 
 func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
