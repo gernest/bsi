@@ -1,0 +1,142 @@
+package storage
+
+import (
+	"bytes"
+	"encoding/binary"
+	"math/bits"
+	"slices"
+
+	"github.com/gernest/u128/internal/bitmaps"
+	"github.com/gernest/u128/internal/checksum"
+	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/views"
+	"github.com/prometheus/prometheus/model/labels"
+	"go.etcd.io/bbolt"
+)
+
+var shardsPool views.Pool
+
+// Search for all shards that have timestamps within the start and end range. To avoid opeting
+// another database transaction, we also decode matchers for searching in our RBF storage.
+func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *views.List, err error) {
+	vs = shardsPool.Get()
+
+	err = db.txt.View(func(tx *bbolt.Tx) error {
+		cu := tx.Bucket(admin).Cursor()
+		for k, v := cu.First(); v != nil; k, v = cu.Next() {
+			o := magic.ReinterpretSlice[views.Meta](v)
+			if o[0].InRange(start, end) {
+				vs.Shards = append(vs.Shards, binary.BigEndian.Uint64(k))
+				vs.Meta = append(vs.Meta, o[0])
+			}
+		}
+		if len(vs.Meta) == 0 {
+			return nil
+		}
+		if len(matchers) > 0 {
+			searchB := tx.Bucket(search)
+			cu := searchB.Cursor()
+			for _, m := range matchers {
+				switch m.Type {
+				case labels.MatchEqual:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						// no bucket for label name observed yet. We will never satisfy
+						// matching conditions
+						vs.Reset()
+						return nil
+					}
+					mb := searchB.Bucket(b)
+					value := mb.Get(magic.Slice(m.Value))
+					if value == nil {
+						vs.Reset()
+						return nil
+					}
+					va := binary.BigEndian.Uint64(value)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Values: []uint64{va},
+						Depth:  uint8(bits.Len64(va)),
+						OP:     bitmaps.EQ,
+					})
+				case labels.MatchNotEqual:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						continue
+					}
+					mb := searchB.Bucket(b)
+					value := mb.Get(magic.Slice(m.Value))
+					if value == nil {
+						continue
+					}
+					va := binary.BigEndian.Uint64(value)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Values: []uint64{va},
+						Depth:  uint8(bits.Len64(mb.Sequence())),
+						OP:     bitmaps.NEQ,
+					})
+				case labels.MatchRegexp:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						// no bucket for label name observed yet. We will never satisfy
+						// matching conditions
+						vs.Reset()
+						return nil
+					}
+					mb := searchB.Bucket(b)
+					values := make([]uint64, 0, 64)
+
+					mc := mb.Cursor()
+					prefix := magic.Slice(m.Prefix())
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+						va := binary.BigEndian.Uint64(b)
+						values = append(values, va)
+					}
+					if len(values) == 0 {
+						vs.Reset()
+						return nil
+					}
+					slices.Sort(values)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Values: values,
+						Depth:  uint8(bits.Len64(values[len(values)-1])),
+						OP:     bitmaps.NEQ,
+					})
+
+				case labels.MatchNotRegexp:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						continue
+					}
+					mb := searchB.Bucket(b)
+					values := make([]uint64, 0, 64)
+
+					mc := mb.Cursor()
+					prefix := magic.Slice(m.Prefix())
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+						va := binary.BigEndian.Uint64(b)
+						values = append(values, va)
+					}
+					if len(values) == 0 {
+						continue
+					}
+					slices.Sort(values)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Values: values,
+						Depth:  uint8(bits.Len64(mb.Sequence())),
+						OP:     bitmaps.NEQ,
+					})
+				}
+
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		shardsPool.Put(vs)
+	}
+	return
+}

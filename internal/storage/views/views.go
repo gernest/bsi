@@ -44,7 +44,7 @@ func (v *List) Reset() {
 }
 
 type Search struct {
-	Value  []uint64
+	Values []uint64
 	Column uint64
 	Depth  uint8
 	OP     bitmaps.OP
