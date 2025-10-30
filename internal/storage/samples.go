@@ -1,41 +1,51 @@
 package storage
 
 import (
+	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
+	"math/bits"
+	"slices"
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/bitmaps"
+	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/rbf"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
 	"github.com/gernest/u128/internal/storage/samples"
 	"github.com/gernest/u128/internal/storage/views"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"go.etcd.io/bbolt"
 )
 
-var viewsPool views.Pool
+var shardsPool views.Pool
 
-func (db *Store) Select(start, end int64) storage.SeriesSet {
-	v, err := db.selectViews(start, end)
+// Select implements storage.Querier.
+//
+// Search is not concurrent. Returned series is always sorted.
+func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	shards, err := db.findShards(hints.Start, hints.End, matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	defer viewsPool.Put(v)
+	defer shardsPool.Put(shards)
 
-	if len(v.Shards) == 0 {
+	if shards.IsEmpty() {
 		return storage.EmptySeriesSet()
 	}
+
 	result := samples.Get()
 	defer result.Release()
 
-	err = db.readTs(result, v, start, end)
+	err = db.readTs(result, shards, hints.Start, hints.End)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	err = db.applyTranslation(result)
+	err = db.translate(result)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -43,10 +53,8 @@ func (db *Store) Select(start, end int64) storage.SeriesSet {
 
 }
 
-// selectViews returns all views between start and end. Upper view is inclusive,
-// we ant to search the upper week for valid samples.
-func (db *Store) selectViews(start, end int64) (vs *views.List, err error) {
-	vs = viewsPool.Get()
+func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *views.List, err error) {
+	vs = shardsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		cu := tx.Bucket(admin).Cursor()
@@ -57,10 +65,113 @@ func (db *Store) selectViews(start, end int64) (vs *views.List, err error) {
 				vs.Meta = append(vs.Meta, o[0])
 			}
 		}
+		if len(vs.Meta) == 0 {
+			return nil
+		}
+		if len(matchers) > 0 {
+			searchB := tx.Bucket(search)
+			cu := searchB.Cursor()
+			for _, m := range matchers {
+				switch m.Type {
+				case labels.MatchEqual:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						// no bucket for label name observed yet. We will never satisfy
+						// matching conditions
+						vs.Reset()
+						return nil
+					}
+					mb := searchB.Bucket(b)
+					value := mb.Get(magic.Slice(m.Value))
+					if value == nil {
+						vs.Reset()
+						return nil
+					}
+					va := binary.BigEndian.Uint64(value)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Value:  []uint64{va},
+						Depth:  uint8(bits.Len64(va)),
+						OP:     bitmaps.EQ,
+					})
+				case labels.MatchNotEqual:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						continue
+					}
+					mb := searchB.Bucket(b)
+					value := mb.Get(magic.Slice(m.Value))
+					if value == nil {
+						continue
+					}
+					va := binary.BigEndian.Uint64(value)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Value:  []uint64{va},
+						Depth:  uint8(bits.Len64(mb.Sequence())),
+						OP:     bitmaps.NEQ,
+					})
+				case labels.MatchRegexp:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						// no bucket for label name observed yet. We will never satisfy
+						// matching conditions
+						vs.Reset()
+						return nil
+					}
+					mb := searchB.Bucket(b)
+					values := make([]uint64, 0, 64)
+
+					mc := mb.Cursor()
+					prefix := magic.Slice(m.Prefix())
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+						va := binary.BigEndian.Uint64(b)
+						values = append(values, va)
+					}
+					if len(values) == 0 {
+						vs.Reset()
+						return nil
+					}
+					slices.Sort(values)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Value:  values,
+						Depth:  uint8(bits.Len64(values[len(values)-1])),
+						OP:     bitmaps.NEQ,
+					})
+
+				case labels.MatchNotRegexp:
+					b, _ := cu.Seek(magic.Slice(m.Name))
+					if !bytes.Equal(b, magic.Slice(m.Name)) {
+						continue
+					}
+					mb := searchB.Bucket(b)
+					values := make([]uint64, 0, 64)
+
+					mc := mb.Cursor()
+					prefix := magic.Slice(m.Prefix())
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+						va := binary.BigEndian.Uint64(b)
+						values = append(values, va)
+					}
+					if len(values) == 0 {
+						continue
+					}
+					slices.Sort(values)
+					vs.Search = append(vs.Search, views.Search{
+						Column: checksum.Hash(b),
+						Value:  values,
+						Depth:  uint8(bits.Len64(mb.Sequence())),
+						OP:     bitmaps.NEQ,
+					})
+				}
+
+			}
+		}
 		return nil
 	})
 	if err != nil {
-		viewsPool.Put(vs)
+		shardsPool.Put(vs)
 	}
 	return
 }
@@ -115,17 +226,15 @@ func (db *Store) readTs(result *samples.Samples, vs *views.List, start, end int6
 	return nil
 }
 
-func (db *Store) applyTranslation(result *samples.Samples) error {
+func (db *Store) translate(result *samples.Samples) error {
 
-	var b [8]byte
-
-	readData := func(tx *bbolt.Tx, bucket []byte, columns *roaring.Bitmap) {
+	readData := func(tx *bbolt.Tx, bucket []byte, values *roaring.Bitmap) {
 		bu := tx.Bucket(bucket)
-		for column := range columns.RangeAll() {
-			binary.BigEndian.PutUint64(b[:], column)
-			v := result.Own(bu.Get(b[:]))
-			result.Data[column] = v
-		}
+		readFromU64(bu, values, func(id uint64, value []byte) error {
+			v := result.Own(value)
+			result.Data[id] = v
+			return nil
+		})
 	}
 
 	return db.txt.View(func(tx *bbolt.Tx) error {

@@ -19,6 +19,7 @@ type BSI struct {
 	data   []*roaring.Bitmap
 }
 
+// From converts rbf BSI data into b for the given filter columns.
 func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter *roaring.Bitmap) error {
 	exists, err := bitmaps.Row(tx, shard, 0)
 	if err != nil {
@@ -32,9 +33,7 @@ func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter
 	if err != nil {
 		return err
 	}
-	if filter != nil {
-		sign = sign.Intersect(filter)
-	}
+	sign = sign.Intersect(exists)
 
 	if len(b.data) < int(bitDepth) {
 		b.data = slices.Grow(b.data, int(bitDepth))[:bitDepth]
@@ -122,6 +121,11 @@ func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 // GetColumns returns al columns with given predicate.
 func (b *BSI) GetColumns(predicate int64, filter *roaring.Bitmap) *roaring.Bitmap {
 
+	depth := bits.Len64(uint64(predicate))
+	if len(b.data) < depth {
+		return roaring.NewBitmap()
+	}
+
 	exists := b.exists.Intersect(filter)
 	if !exists.Any() {
 		return roaring.NewBitmap()
@@ -136,7 +140,7 @@ func (b *BSI) GetColumns(predicate int64, filter *roaring.Bitmap) *roaring.Bitma
 	} else {
 		exists = exists.Difference(b.sign) // only positives
 	}
-	for i := range b.data {
+	for i := range depth {
 		row := b.data[i]
 		bit := (unsignedPredicate >> uint(i)) & 1
 

@@ -24,13 +24,31 @@ func (p *Pool) Get() *List {
 }
 
 func (p *Pool) Put(v *List) {
-	v.Meta = v.Meta[:0]
-	v.Shards = v.Shards[:0]
+	v.Reset()
+	p.p.Put(v)
 }
 
 type List struct {
 	Shards []uint64
 	Meta   []Meta
+	Search []Search
+}
+
+func (v *List) IsEmpty() bool {
+	return len(v.Shards) == 0
+}
+
+func (v *List) Reset() {
+	v.Meta = v.Meta[:0]
+	v.Search = v.Search[:0]
+	v.Shards = v.Shards[:0]
+}
+
+type Search struct {
+	Column checksum.U128
+	Value  []uint64
+	Depth  uint8
+	OP     bitmaps.OP
 }
 
 type Meta struct {
@@ -90,7 +108,7 @@ func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 		hi = max(la.ID, hi)
 		bitmaps.BSI(labels, id, int64(la.ID))
 		for j := range la.Views {
-			bitmaps.Mutex(s.Get(la.Views[j]), id, la.Rows[j])
+			bitmaps.BSI(s.Get(la.Views[j]), id, int64(la.Rows[j]))
 		}
 		id++
 	}
