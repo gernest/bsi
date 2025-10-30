@@ -3,8 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
-	"math/bits"
-	"slices"
+	"sort"
 
 	"github.com/gernest/u128/internal/bitmaps"
 	"github.com/gernest/u128/internal/checksum"
@@ -55,9 +54,10 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					va := binary.BigEndian.Uint64(value)
 					vs.Search = append(vs.Search, views.Search{
 						Column: checksum.Hash(b),
-						Values: []uint64{va},
-						Depth:  uint8(bits.Len64(va)),
-						OP:     bitmaps.EQ,
+						Values: []views.Value{
+							{Predicate: int64(va)},
+						},
+						OP: bitmaps.EQ,
 					})
 				case labels.MatchNotEqual:
 					b, _ := cu.Seek(magic.Slice(m.Name))
@@ -72,9 +72,10 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					va := binary.BigEndian.Uint64(value)
 					vs.Search = append(vs.Search, views.Search{
 						Column: checksum.Hash(b),
-						Values: []uint64{va},
-						Depth:  uint8(bits.Len64(mb.Sequence())),
-						OP:     bitmaps.NEQ,
+						Values: []views.Value{
+							{Predicate: int64(va)},
+						},
+						OP: bitmaps.NEQ,
 					})
 				case labels.MatchRegexp:
 					b, _ := cu.Seek(magic.Slice(m.Name))
@@ -85,24 +86,25 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						return nil
 					}
 					mb := searchB.Bucket(b)
-					values := make([]uint64, 0, 64)
+					values := make([]views.Value, 0, 64)
 
 					mc := mb.Cursor()
 					prefix := magic.Slice(m.Prefix())
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
 						va := binary.BigEndian.Uint64(b)
-						values = append(values, va)
+						values = append(values, views.Value{Predicate: int64(va)})
 					}
 					if len(values) == 0 {
 						vs.Reset()
 						return nil
 					}
-					slices.Sort(values)
+					sort.Slice(values, func(i, j int) bool {
+						return values[i].Predicate < values[j].Predicate
+					})
 					vs.Search = append(vs.Search, views.Search{
 						Column: checksum.Hash(b),
 						Values: values,
-						Depth:  uint8(bits.Len64(values[len(values)-1])),
-						OP:     bitmaps.NEQ,
+						OP:     bitmaps.EQ,
 					})
 
 				case labels.MatchNotRegexp:
@@ -111,23 +113,24 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						continue
 					}
 					mb := searchB.Bucket(b)
-					values := make([]uint64, 0, 64)
+					values := make([]views.Value, 0, 64)
 
 					mc := mb.Cursor()
 					prefix := magic.Slice(m.Prefix())
-					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && !m.Matches(magic.String(a)); a, b = mc.Next() {
 						va := binary.BigEndian.Uint64(b)
-						values = append(values, va)
+						values = append(values, views.Value{Predicate: int64(va)})
 					}
 					if len(values) == 0 {
 						continue
 					}
-					slices.Sort(values)
+					sort.Slice(values, func(i, j int) bool {
+						return values[i].Predicate < values[j].Predicate
+					})
 					vs.Search = append(vs.Search, views.Search{
 						Column: checksum.Hash(b),
 						Values: values,
-						Depth:  uint8(bits.Len64(mb.Sequence())),
-						OP:     bitmaps.NEQ,
+						OP:     bitmaps.EQ,
 					})
 				}
 

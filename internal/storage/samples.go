@@ -70,11 +70,11 @@ func (db *Store) readTs(result *samples.Samples, vs *views.List, start, end int6
 		if !ra.Any() {
 			continue
 		}
+
 		kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
 		if !ok {
 			panic("missing metric type root records")
 		}
-
 		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Float), 0)
 		if err != nil {
 			return err
@@ -83,10 +83,18 @@ func (db *Store) readTs(result *samples.Samples, vs *views.List, start, end int6
 		if err != nil {
 			return err
 		}
+
+		// metric samples can either be histograms or floats.
 		ra = ra.Intersect(float.Union(histogram))
 		if !ra.Any() {
 			continue
 		}
+
+		ra, err = applyBSIFilters(tx, records, shard, ra, vs.Search)
+		if err != nil {
+			return fmt.Errorf("applying filters %w", err)
+		}
+
 		err = readSamples(result, vs.Meta[i], tx, records, shard, ra)
 		if err != nil {
 			return err

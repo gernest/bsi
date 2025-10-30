@@ -44,10 +44,18 @@ func (v *List) Reset() {
 }
 
 type Search struct {
-	Values []uint64
+	Values []Value
 	Column uint64
-	Depth  uint8
 	OP     bitmaps.OP
+}
+
+type Value struct {
+	Predicate int64
+	End       int64
+}
+
+func (v *Value) Depth() uint8 {
+	return uint8(bits.Len64(max(uint64(v.Predicate), uint64(v.End))))
 }
 
 type Meta struct {
