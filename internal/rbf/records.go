@@ -1,14 +1,12 @@
 package rbf
 
 import (
-	"bytes"
 	"cmp"
 	"fmt"
 	"io"
 	"unsafe"
 
 	"github.com/benbjohnson/immutable"
-	"github.com/gernest/u128/internal/checksum"
 )
 
 const recordSize = int(unsafe.Sizeof(Record{}))
@@ -17,7 +15,7 @@ const recordSize = int(unsafe.Sizeof(Record{}))
 type Records = immutable.SortedMap[Key, uint32]
 
 type Key struct {
-	Column checksum.U128
+	Column uint64
 	Shard  uint64
 }
 
@@ -33,7 +31,7 @@ func (k Key) IsEmpty() bool {
 }
 
 type Record struct {
-	Column checksum.U128
+	Column uint64
 	Shard  uint64
 	Page   uint32
 }
@@ -74,9 +72,9 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := bytes.Compare(a.Column[:], b.Column[:])
+	i := cmp.Compare(a.Shard, b.Shard)
 	if i != 0 {
 		return i
 	}
-	return cmp.Compare(a.Shard, b.Shard)
+	return cmp.Compare(a.Column, b.Column)
 }

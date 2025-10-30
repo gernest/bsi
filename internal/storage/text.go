@@ -54,14 +54,15 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
 
+		var sumB [8]byte
 		for i := range r.Labels {
 			if i != 0 && bytes.Equal(r.Labels[i], r.Labels[i-1]) {
 				// fast path: ingesting same series with multiple samples.
 				out.B[i] = out.B[i-1]
 				continue
 			}
-			sum := checksum.Hash(r.Labels[i])
-			if got := metricsSumB.Get(sum[:]); got != nil {
+			sum := binary.BigEndian.AppendUint64(sumB[:0], checksum.Hash(r.Labels[i]))
+			if got := metricsSumB.Get(sum); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
 				out.B[i].Decode(got)
@@ -87,7 +88,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
-					id.Views = append(id.Views, view)
+					id.Columns = append(id.Columns, view)
 					id.Rows = append(id.Rows, binary.BigEndian.Uint64(got))
 				} else {
 					// slow path: assign unique id to value
@@ -99,7 +100,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					id.Views = append(id.Views, view)
+					id.Columns = append(id.Columns, view)
 					id.Rows = append(id.Rows, nxt)
 				}
 
@@ -218,7 +219,7 @@ func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value 
 }
 
 type Matchers struct {
-	Columns []checksum.U128
+	Columns []uint64
 	Negate  []bool
 	Rows    []*roaring.Bitmap
 }

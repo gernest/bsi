@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/magic"
 	"github.com/gernest/u128/internal/storage/prefix"
@@ -41,22 +40,22 @@ func (p *Pool) Put(b *B) {
 // used during ingestion. The uint64 value in ID field is the one used during search,
 // the rest of the fields are here to speed up ingestion.
 type ID struct {
-	Views []checksum.U128
-	Rows  []uint64
-	ID    uint64
+	Columns []uint64
+	Rows    []uint64
+	ID      uint64
 }
 
 func (id ID) String() string {
 	var o bytes.Buffer
 	fmt.Fprintf(&o, "%d", id.ID)
-	for i := range id.Views {
-		fmt.Fprintf(&o, " %x=%d", id.Views[i], id.Rows[i])
+	for i := range id.Columns {
+		fmt.Fprintf(&o, " %x=%d", id.Columns[i], id.Rows[i])
 	}
 	return o.String()
 }
 
 func (id *ID) Reset() {
-	id.Views = id.Views[:0]
+	id.Columns = id.Columns[:0]
 	id.Rows = id.Rows[:0]
 	id.ID = 0
 }
@@ -67,7 +66,7 @@ func (id *ID) Encode() []byte {
 	defer bytesPool.Put(w)
 
 	w.B = binary.AppendUvarint(w.B, id.ID)
-	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Views))
+	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Columns))
 	w.B = prefix.Encode(w.B, magic.ReinterpretSlice[byte](id.Rows))
 	return bytes.Clone(w.B)
 }
@@ -78,7 +77,7 @@ func (id *ID) Decode(data []byte) {
 	id.ID, n = binary.Uvarint(data)
 	data = data[n:]
 	views, left := prefix.Decode(data)
-	id.Views = append(id.Views, magic.ReinterpretSlice[checksum.U128](views)...)
+	id.Columns = append(id.Columns, magic.ReinterpretSlice[uint64](views)...)
 	rows, _ := prefix.Decode(left)
 	id.Rows = append(id.Rows[:0], magic.ReinterpretSlice[uint64](rows)...)
 }

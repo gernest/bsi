@@ -6,7 +6,6 @@ import (
 
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/bitmaps"
-	"github.com/gernest/u128/internal/checksum"
 	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
 	"github.com/gernest/u128/internal/storage/tsid"
@@ -45,7 +44,7 @@ func (v *List) Reset() {
 }
 
 type Search struct {
-	Column checksum.U128
+	Column uint64
 	Value  []uint64
 	Depth  uint8
 	OP     bitmaps.OP
@@ -85,7 +84,7 @@ type Map map[uint64]*Data
 func (s Map) Get(shard uint64) *Data {
 	r, ok := s[shard]
 	if !ok {
-		r = &Data{Columns: make(map[checksum.U128]*roaring.Bitmap)}
+		r = &Data{Columns: make(map[uint64]*roaring.Bitmap)}
 		s[shard] = r
 	}
 	return r
@@ -93,7 +92,7 @@ func (s Map) Get(shard uint64) *Data {
 
 type Data struct {
 	Meta    Meta
-	Columns map[checksum.U128]*roaring.Bitmap
+	Columns map[uint64]*roaring.Bitmap
 }
 
 func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
@@ -107,8 +106,8 @@ func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 		la := &values[i]
 		hi = max(la.ID, hi)
 		bitmaps.BSI(labels, id, int64(la.ID))
-		for j := range la.Views {
-			bitmaps.BSI(s.Get(la.Views[j]), id, int64(la.Rows[j]))
+		for j := range la.Columns {
+			bitmaps.BSI(s.Get(la.Columns[j]), id, int64(la.Rows[j]))
 		}
 		id++
 	}
@@ -167,7 +166,7 @@ func (s *Data) AddKind(start uint64, values []keys.Kind) {
 	s.Meta.KindDepth = uint8(bits.Len64(uint64(hi))) + 1
 }
 
-func (s *Data) Get(col checksum.U128) *roaring.Bitmap {
+func (s *Data) Get(col uint64) *roaring.Bitmap {
 	r, ok := s.Columns[col]
 	if !ok {
 		r = roaring.NewMapBitmap()
