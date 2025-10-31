@@ -183,8 +183,8 @@ func (s *Samples) Err() error { return nil }
 func (s *Samples) Warnings() annotations.Annotations { return nil }
 
 type series struct {
-	id uint64
 	s  *Samples
+	id uint64
 }
 
 var _ storage.Series = (*series)(nil)
@@ -217,9 +217,9 @@ func (s *series) Iterator(c chunkenc.Iterator) chunkenc.Iterator {
 // Iter implements chunkenc.Iterator on top of Samples.
 type Iter struct {
 	po  *roaring.Iterator
-	typ chunkenc.ValueType
 	s   *series
 	id  uint64
+	typ chunkenc.ValueType
 }
 
 // Init initializes i state.
