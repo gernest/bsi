@@ -183,8 +183,9 @@ func (a *API) Querier(mint, maxt int64) (storage.Querier, error) {
 }
 
 type querier struct {
-	lo, hi int64
-	db     *db.Store
+	db *db.Store
+	lo int64
+	hi int64
 }
 
 var _ storage.Querier = (*querier)(nil)
