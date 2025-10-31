@@ -70,6 +70,7 @@ func (s *Samples) Init() {
 	s.LabelsBSI.Init()
 	s.TsBSI.Init()
 	s.ValuesBSI.Init()
+	s.KindBSI.Init()
 }
 
 // Reset clears s for reuse.
@@ -152,6 +153,10 @@ func (s *Samples) Make() storage.SeriesSet {
 	s.KindBSI.Optimize()
 	s.TsBSI.Optimize()
 	s.ValuesBSI.Optimize()
+
+	for i := range s.ls {
+		fmt.Println(s.ls[i], s.Series[s.ls[i]].Slice())
+	}
 	return s
 }
 

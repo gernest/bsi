@@ -150,7 +150,7 @@ func (s *Data) AddTS(start uint64, values []int64, kinds []keys.Kind) {
 }
 
 func (s *Data) AddValues(start uint64, values []uint64, kinds []keys.Kind) {
-	ra := s.Get(keys.MetricsTimestamp)
+	ra := s.Get(keys.MetricsValue)
 	var hi uint64
 	id := start
 	for i := range values {
@@ -165,7 +165,7 @@ func (s *Data) AddValues(start uint64, values []uint64, kinds []keys.Kind) {
 }
 
 func (s *Data) AddKind(start uint64, values []keys.Kind) {
-	ra := s.Get(keys.MetricsTimestamp)
+	ra := s.Get(keys.MetricsType)
 	var hi keys.Kind
 	id := start
 	for i := range values {

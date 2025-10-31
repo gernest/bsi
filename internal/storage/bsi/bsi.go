@@ -155,7 +155,10 @@ func (b *BSI) GetColumns(predicate int64, filter *roaring.Bitmap) *roaring.Bitma
 
 func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 	result = make(map[uint64]uint64)
-	exists := b.exists.Intersect(filters)
+	exists := b.exists
+	if filters != nil {
+		exists = exists.Intersect(filters)
+	}
 	mergeBits(exists, 0, result)
 	mergeBits(b.sign.Intersect(exists), 1<<63, result)
 	for i := range b.data {
