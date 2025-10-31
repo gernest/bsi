@@ -160,9 +160,11 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 
 				for key, value := range buffer.RangeLabels(lastLabels) {
 					if magic.String(key) == labels.MetricName {
-						err = metaB.Put(value, lastMeta)
-						if err != nil {
-							return fmt.Errorf("storing metadata value %w", err)
+						if metaB.Get(value) == nil {
+							err = metaB.Put(value, lastMeta)
+							if err != nil {
+								return fmt.Errorf("storing metadata value %w", err)
+							}
 						}
 						break
 					}
@@ -174,19 +176,6 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 		return nil
 	})
 	return
-}
-
-func readMetadata(db *bbolt.DB, name []byte, cb func(name, value []byte) error) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		metaB := tx.Bucket(metaData)
-		if len(name) > 0 {
-			v := metaB.Get(name)
-			if v != nil {
-				return cb(name, v)
-			}
-		}
-		return metaB.ForEach(cb)
-	})
 }
 
 func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
