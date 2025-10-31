@@ -126,7 +126,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 			}
 		}
 
-		if r.Has(keys.Histogram) {
+		if r.Has(keys.Histogram) || r.Has(keys.FloatHistogram) {
 			err = txt2u64(tx.Bucket(histogramData), r.Value, r.Histogram)
 			if err != nil {
 				return err

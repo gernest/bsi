@@ -79,13 +79,18 @@ func (db *Store) readTs(result *samples.Samples, vs *views.List, start, end int6
 		if err != nil {
 			return err
 		}
+
 		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Histogram), 0)
+		if err != nil {
+			return err
+		}
+		floatHistogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.FloatHistogram), 0)
 		if err != nil {
 			return err
 		}
 
 		// metric samples can either be histograms or floats.
-		ra = ra.Intersect(float.Union(histogram))
+		ra = ra.Intersect(float.Union(histogram.Union(floatHistogram)))
 		if !ra.Any() {
 			continue
 		}
@@ -116,6 +121,9 @@ func (db *Store) translate(result *samples.Samples) error {
 
 	return db.txt.View(func(tx *bbolt.Tx) error {
 		if ra := result.KindBSI.EQ(int64(keys.Histogram)); ra.Any() {
+			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
+		}
+		if ra := result.KindBSI.EQ(int64(keys.FloatHistogram)); ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
 		if ra := result.KindBSI.EQ(int64(keys.Exemplar)); ra.Any() {

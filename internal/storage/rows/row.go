@@ -69,16 +69,19 @@ func (r *Rows) AppendFloat(la labels.Labels, ts int64, value float64) {
 }
 
 // AppendHistogram stores histogram sample.
-func (r *Rows) AppendHistogram(la labels.Labels, ts int64, value []byte) {
+func (r *Rows) AppendHistogram(la labels.Labels, ts int64, value []byte, isFloat bool) {
 	r.Labels = append(r.Labels, bytes.Clone(buffer.UnwrapLabel(&la)))
 	r.Timestamp = append(r.Timestamp, ts)
 	r.Histogram = append(r.Histogram, value)
-
-	r.Kind = append(r.Kind, keys.Histogram)
+	kind := keys.Histogram
+	if isFloat {
+		kind = keys.FloatHistogram
+	}
+	r.Kind = append(r.Kind, kind)
 	r.Value = append(r.Value, 0)
 	r.Metadata = append(r.Metadata, nil)
 	r.Exemplar = append(r.Exemplar, nil)
-	r.flags |= keys.Histogram
+	r.flags |= kind
 }
 
 // AppendExemplar adds exemplar row.

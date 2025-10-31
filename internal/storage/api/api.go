@@ -133,7 +133,7 @@ func (w *appender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64
 		hs = prompb.FromFloatHistogram(t, fh)
 	}
 	data, _ := hs.Marshal()
-	w.set.AppendHistogram(l, t, data)
+	w.set.AppendHistogram(l, t, data, fh != nil)
 	return 0, nil
 }
 

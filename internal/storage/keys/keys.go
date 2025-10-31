@@ -17,6 +17,7 @@ const (
 	None Kind = iota
 	Float
 	Histogram
+	FloatHistogram
 	Exemplar
 	Metadata
 )
