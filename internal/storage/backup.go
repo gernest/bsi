@@ -13,7 +13,7 @@ import (
 // Backup writes a backup file in the directory. We use UUIDv7 for the backup file
 // which is in the zip format.
 func (db *Store) Backup(dir string) error {
-	path := filepath.Join(dir, uuid.Must(uuid.NewV7()).String())
+	path := filepath.Join(dir, uuid.Must(uuid.NewV7()).String()+".zip")
 	file, err := os.Create(path)
 	if err != nil {
 		return err
