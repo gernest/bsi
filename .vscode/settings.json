@@ -8,6 +8,7 @@
         "gernest",
         "labelset",
         "shardwidth",
-        "TSID"
+        "TSID",
+        "xxhash"
     ]
 }
