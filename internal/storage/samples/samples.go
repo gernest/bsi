@@ -10,6 +10,7 @@ import (
 	"github.com/gernest/u128/internal/storage/bsi"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/keys"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -83,6 +84,33 @@ func (s *Samples) Reset() {
 	s.b.B = s.b.B[:0]
 	s.ref = 0
 	s.ls = s.ls[:0]
+}
+
+// MakeExemplar returns exemplars. Series values must be of kind.Exemplar.
+func (s *Samples) MakeExemplar() (result []exemplar.QueryResult) {
+	s.ls = s.ls[:0]
+	for v := range s.Series {
+		s.ls = append(s.ls, v)
+	}
+	slices.Sort(s.ls)
+	var e prompb.Exemplar
+	scratch := labels.NewScratchBuilder(64)
+	for i := range s.ls {
+		id := s.ls[i]
+		series := buffer.WrapLabel(s.SeriesData[id]).Copy()
+		exe := make([]exemplar.Exemplar, 0)
+		for value := range s.Series[id].RangeAll() {
+			exeID, _ := s.ValuesBSI.GetValue(value)
+			e.Reset()
+			e.Unmarshal(s.Data[exeID])
+			exe = append(exe, e.ToExemplar(&scratch, nil))
+		}
+		result = append(result, exemplar.QueryResult{
+			SeriesLabels: series,
+			Exemplars:    exe,
+		})
+	}
+	return
 }
 
 // Make builds storage.SeriesSet from samples s.  We sort series by the u128 checksum

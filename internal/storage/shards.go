@@ -143,3 +143,136 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 	}
 	return
 }
+
+func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (vs *views.List, err error) {
+	vs = shardsPool.Get()
+
+	err = db.txt.View(func(tx *bbolt.Tx) error {
+		cu := tx.Bucket(admin).Cursor()
+		for k, v := cu.First(); v != nil; k, v = cu.Next() {
+			o := magic.ReinterpretSlice[views.Meta](v)
+			if o[0].InRange(start, end) {
+				vs.Shards = append(vs.Shards, binary.BigEndian.Uint64(k))
+				vs.Meta = append(vs.Meta, o[0])
+			}
+		}
+		if len(vs.Meta) == 0 {
+			return nil
+		}
+		if len(matchers) > 0 {
+			searchB := tx.Bucket(search)
+			cu := searchB.Cursor()
+		top:
+			for i := range matchers {
+				ls := make([]views.Search, 0, len(matchers[i]))
+			local:
+				for _, m := range matchers[i] {
+					switch m.Type {
+					case labels.MatchEqual:
+						b, _ := cu.Seek(magic.Slice(m.Name))
+						if !bytes.Equal(b, magic.Slice(m.Name)) {
+							// no bucket for label name observed yet. We will never satisfy
+							// matching conditions
+							vs.Reset()
+							continue top
+						}
+						mb := searchB.Bucket(b)
+						value := mb.Get(magic.Slice(m.Value))
+						if value == nil {
+							continue top
+						}
+						va := binary.BigEndian.Uint64(value)
+						ls = append(ls, views.Search{
+							Column: checksum.Hash(b),
+							Values: []views.Value{
+								{Predicate: int64(va)},
+							},
+							OP: bitmaps.EQ,
+						})
+					case labels.MatchNotEqual:
+						b, _ := cu.Seek(magic.Slice(m.Name))
+						if !bytes.Equal(b, magic.Slice(m.Name)) {
+							continue local
+						}
+						mb := searchB.Bucket(b)
+						value := mb.Get(magic.Slice(m.Value))
+						if value == nil {
+							continue local
+						}
+						va := binary.BigEndian.Uint64(value)
+						ls = append(ls, views.Search{
+							Column: checksum.Hash(b),
+							Values: []views.Value{
+								{Predicate: int64(va)},
+							},
+							OP: bitmaps.NEQ,
+						})
+					case labels.MatchRegexp:
+						b, _ := cu.Seek(magic.Slice(m.Name))
+						if !bytes.Equal(b, magic.Slice(m.Name)) {
+							// no bucket for label name observed yet. We will never satisfy
+							// matching conditions
+							vs.Reset()
+							continue top
+						}
+						mb := searchB.Bucket(b)
+						values := make([]views.Value, 0, 64)
+
+						mc := mb.Cursor()
+						prefix := magic.Slice(m.Prefix())
+						for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
+							va := binary.BigEndian.Uint64(b)
+							values = append(values, views.Value{Predicate: int64(va)})
+						}
+						if len(values) == 0 {
+							continue top
+						}
+						sort.Slice(values, func(i, j int) bool {
+							return values[i].Predicate < values[j].Predicate
+						})
+						ls = append(ls, views.Search{
+							Column: checksum.Hash(b),
+							Values: values,
+							OP:     bitmaps.EQ,
+						})
+
+					case labels.MatchNotRegexp:
+						b, _ := cu.Seek(magic.Slice(m.Name))
+						if !bytes.Equal(b, magic.Slice(m.Name)) {
+							continue
+						}
+						mb := searchB.Bucket(b)
+						values := make([]views.Value, 0, 64)
+
+						mc := mb.Cursor()
+						prefix := magic.Slice(m.Prefix())
+						for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && !m.Matches(magic.String(a)); a, b = mc.Next() {
+							va := binary.BigEndian.Uint64(b)
+							values = append(values, views.Value{Predicate: int64(va)})
+						}
+						if len(values) == 0 {
+							continue top
+						}
+						sort.Slice(values, func(i, j int) bool {
+							return values[i].Predicate < values[j].Predicate
+						})
+						ls = append(ls, views.Search{
+							Column: checksum.Hash(b),
+							Values: values,
+							OP:     bitmaps.EQ,
+						})
+					}
+
+				}
+				if len(ls) > 0 {
+					vs.SearchAny = append(vs.SearchAny, ls)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		shardsPool.Put(vs)
+	}
+	return
+}

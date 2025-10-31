@@ -24,7 +24,35 @@ func readBSI(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring
 	return result.From(cu, shard, uint8(depth), filter)
 }
 
-// Perform intersection of all matchers with filter.
+func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers [][]views.Search) (*roaring.Bitmap, error) {
+	all := make([]*roaring.Bitmap, 0, len(matchers))
+	for i := range matchers {
+		m := matchers[i]
+		rx, err := readBSIFilter(tx, records, shard, &m[0])
+		if err != nil {
+			return nil, err
+		}
+		if !rx.Any() {
+			continue
+		}
+		rx, err = applyBSIFilters(tx, records, shard, rx, matchers[i][1:])
+		if err != nil {
+			return nil, err
+		}
+		if !rx.Any() {
+			continue
+		}
+		all = append(all, rx)
+	}
+	if len(all) == 0 {
+		return roaring.NewBitmap(), nil
+	}
+	if len(all) == 1 {
+		return filter.Intersect(all[0]), nil
+	}
+	return filter.Intersect(all[0].Union(all[1:]...)), nil
+}
+
 func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers []views.Search) (*roaring.Bitmap, error) {
 	for i := range matchers {
 		rx, err := readBSIFilter(tx, records, shard, &matchers[i])

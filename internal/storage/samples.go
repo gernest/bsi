@@ -188,3 +188,38 @@ func readSamples(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *
 	}
 	return nil
 }
+
+func readExemplars(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+
+	{
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		if !ok {
+			return fmt.Errorf("missing metric type root record")
+		}
+		err := readBSI(tx, root, shard, meta.KindDepth, match, &result.TsBSI)
+		if err != nil {
+			return fmt.Errorf("reading metric type %w", err)
+		}
+	}
+	{
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
+		if !ok {
+			return fmt.Errorf("missing labels root record")
+		}
+		err := readBSI(tx, root, shard, meta.LabelsDepth, match, &result.LabelsBSI)
+		if err != nil {
+			return fmt.Errorf("reading labels %w", err)
+		}
+	}
+	{
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
+		if !ok {
+			return fmt.Errorf("missing values root record")
+		}
+		err := readBSI(tx, root, shard, meta.ValueDepth, match, &result.ValuesBSI)
+		if err != nil {
+			return fmt.Errorf("reading values %w", err)
+		}
+	}
+	return nil
+}

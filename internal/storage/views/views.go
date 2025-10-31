@@ -28,9 +28,10 @@ func (p *Pool) Put(v *List) {
 }
 
 type List struct {
-	Shards []uint64
-	Meta   []Meta
-	Search []Search
+	Shards    []uint64
+	Meta      []Meta
+	Search    []Search
+	SearchAny [][]Search
 }
 
 func (v *List) IsEmpty() bool {
@@ -38,9 +39,10 @@ func (v *List) IsEmpty() bool {
 }
 
 func (v *List) Reset() {
+	v.Shards = v.Shards[:0]
 	v.Meta = v.Meta[:0]
 	v.Search = v.Search[:0]
-	v.Shards = v.Shards[:0]
+	v.SearchAny = v.SearchAny[:0]
 }
 
 type Search struct {
