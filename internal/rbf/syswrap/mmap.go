@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/pkg/errors"
 )
@@ -35,14 +34,14 @@ func SetMaxMapCount(max uint64) uint64 {
 // Mmap increments the global map count, and then calls syscall.Mmap. It
 // decrements the map count and returns an error if the count was over the
 // limit. If syscall.Mmap returns an error it also decrements the count.
-func Mmap(fd int, offset int64, length int, prot int, flags int) (data []byte, err error) {
+func Mmap(fd int, length int) (data []byte, err error) {
 	mu.RLock()
 	defer mu.RUnlock()
 	if newCount := atomic.AddUint64(&mapCount, 1); newCount > maxMapCount {
 		atomic.AddUint64(&mapCount, ^uint64(0)) // decrement
 		return nil, ErrMaxMapCountReached
 	}
-	data, err = syscall.Mmap(fd, offset, length, prot, flags)
+	data, err = mmap(fd, length)
 	if err != nil {
 		atomic.AddUint64(&mapCount, ^uint64(0)) // decrement
 		if strings.Contains(err.Error(), "cannot allocate memory") {
@@ -55,7 +54,7 @@ func Mmap(fd int, offset int64, length int, prot int, flags int) (data []byte, e
 // Munmap calls sycall.Munmap, and then decrements the global map count if there
 // was no error.
 func Munmap(b []byte) (err error) {
-	err = syscall.Munmap(b)
+	err = munmap(b)
 	if err == nil {
 		atomic.AddUint64(&mapCount, ^uint64(0)) // decrement
 	}
