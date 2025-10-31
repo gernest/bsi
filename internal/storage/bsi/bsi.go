@@ -119,39 +119,6 @@ func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 }
 
 // GetColumns returns al columns with given predicate.
-func (b *BSI) GetColumns(predicate int64, filter *roaring.Bitmap) *roaring.Bitmap {
-
-	depth := bits.Len64(uint64(predicate))
-	if len(b.data) < depth {
-		return roaring.NewBitmap()
-	}
-
-	exists := b.exists.Intersect(filter)
-	if !exists.Any() {
-		return roaring.NewBitmap()
-	}
-	unsignedPredicate := absInt64(predicate)
-	if bits.Len64(unsignedPredicate) > len(b.data) {
-		// Predicate is out of range.
-		return roaring.NewBitmap()
-	}
-	if predicate < 0 {
-		exists = exists.Intersect(b.sign) // only negatives
-	} else {
-		exists = exists.Difference(b.sign) // only positives
-	}
-	for i := range depth {
-		row := b.data[i]
-		bit := (unsignedPredicate >> uint(i)) & 1
-
-		if bit == 1 {
-			exists = exists.Intersect(row)
-		} else {
-			exists = exists.Difference(row)
-		}
-	}
-	return exists
-}
 
 func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 	result = make(map[uint64]uint64)
@@ -168,6 +135,150 @@ func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 		result[k] = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))
 	}
 	return
+}
+
+func (b *BSI) GT(predicate int64, allowEquality bool) *roaring.Bitmap {
+	if predicate == -1 && !allowEquality {
+		predicate, allowEquality = 0, true
+	}
+	// Create predicate without sign bit.
+	unsignedPredicate := absInt64(predicate)
+	exists := b.exists
+	switch {
+	case predicate == 0 && !allowEquality:
+		// Match all positive numbers except zero.
+		exists = b.neq(0)
+
+		fallthrough
+	case predicate == 0 && allowEquality:
+		// Match all positive numbers.
+		return exists.Difference(b.sign)
+	case predicate >= 0:
+		// Match all positive numbers greater than the predicate.
+		return b.ugt(exists.Difference(b.sign), unsignedPredicate, allowEquality)
+	default:
+		// Match all positives and greater negatives.
+		neg := b.ult(exists.Intersect(b.sign), unsignedPredicate, allowEquality)
+
+		pos := exists.Difference(b.sign)
+		return pos.Union(neg)
+	}
+}
+
+func (b *BSI) neq(predicate int64) *roaring.Bitmap {
+	return b.EQ(predicate).Difference(b.exists)
+}
+
+func (b *BSI) EQ(predicate int64) *roaring.Bitmap {
+	exists := b.exists
+	if !exists.Any() {
+		return roaring.NewBitmap()
+	}
+	unsignedPredicate := absInt64(predicate)
+	if bits.Len64(unsignedPredicate) > len(b.data) {
+		// Predicate is out of range.
+		return roaring.NewBitmap()
+	}
+	if predicate < 0 {
+		exists = exists.Intersect(b.sign) // only negatives
+	} else {
+		exists = exists.Difference(b.sign) // only positives
+	}
+	for i := range b.data {
+		row := b.data[i]
+		bit := (unsignedPredicate >> uint(i)) & 1
+
+		if bit == 1 {
+			exists = exists.Intersect(row)
+		} else {
+			exists = exists.Difference(row)
+		}
+	}
+	return exists
+}
+
+func (b *BSI) ugt(filter *roaring.Bitmap, predicate uint64, allowEquality bool) *roaring.Bitmap {
+	bitDepth := uint64(len(b.data))
+prep:
+	switch {
+	case predicate == 0 && allowEquality:
+		// This query matches all possible values.
+		return filter
+	case predicate == 0 && !allowEquality:
+		// This query matches everything that is not 0.
+		matches := roaring.NewBitmap()
+		for i := uint64(0); i < bitDepth; i++ {
+			row := b.data[i]
+			matches = matches.Union(filter.Intersect(row))
+		}
+		return matches
+	case !allowEquality && uint64(bits.Len64(predicate)) > bitDepth:
+		// The predicate is bigger than the BSI width, so nothing can be bigger.
+		return roaring.NewBitmap()
+	case allowEquality:
+		predicate--
+		allowEquality = false
+		goto prep
+	}
+
+	// Compare intermediate bits.
+	matched := roaring.NewBitmap()
+	remaining := filter
+	predicate |= (^uint64(0)) << bitDepth
+	for i := int(bitDepth - 1); i >= 0 && predicate < ^uint64(0) && remaining.Any(); i-- {
+		row := b.data[i]
+		ones := remaining.Intersect(row)
+		switch (predicate >> uint(i)) & 1 {
+		case 1:
+			// Discard everything with a zero bit here.
+			remaining = ones
+		case 0:
+			// Match everything with a one bit here.
+			matched = matched.Union(ones)
+			predicate |= 1 << uint(i)
+		}
+	}
+
+	return matched
+}
+
+func (b *BSI) ult(filter *roaring.Bitmap, predicate uint64, allowEquality bool) *roaring.Bitmap {
+	bitDepth := uint64(len(b.data))
+	switch {
+	case uint64(bits.Len64(predicate)) > bitDepth:
+		fallthrough
+	case predicate == (1<<bitDepth)-1 && allowEquality:
+		// This query matches all possible values.
+		return filter
+	case predicate == (1<<bitDepth)-1 && !allowEquality:
+		// This query matches everything that is not (1<<bitDepth)-1.
+		matches := roaring.NewBitmap()
+		for i := uint64(0); i < bitDepth; i++ {
+			matches = matches.Union(filter.Difference(b.data[i]))
+		}
+		return matches
+	case allowEquality:
+		predicate++
+	}
+
+	// Compare intermediate bits.
+	matched := roaring.NewBitmap()
+	remaining := filter
+	for i := int(bitDepth - 1); i >= 0 && predicate > 0 && remaining.Any(); i-- {
+		row := b.data[i]
+		zeroes := remaining.Difference(row)
+		switch (predicate >> uint(i)) & 1 {
+		case 1:
+			// Match everything with a zero bit here.
+			matched = matched.Union(zeroes)
+			predicate &^= 1 << uint(i)
+		case 0:
+			// Discard everything with a one bit here.
+			remaining = zeroes
+		}
+	}
+
+	return matched
 }
 
 func (b *BSI) Transpose(filters *roaring.Bitmap) (ra *roaring.Bitmap) {

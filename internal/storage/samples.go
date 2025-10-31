@@ -115,10 +115,10 @@ func (db *Store) translate(result *samples.Samples) error {
 	}
 
 	return db.txt.View(func(tx *bbolt.Tx) error {
-		if ra := result.KindBSI.GetColumns(int64(keys.Histogram), nil); ra.Any() {
+		if ra := result.KindBSI.EQ(int64(keys.Histogram)); ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
-		if ra := result.KindBSI.GetColumns(int64(keys.Exemplar), nil); ra.Any() {
+		if ra := result.KindBSI.EQ(int64(keys.Exemplar)); ra.Any() {
 			readData(tx, exemplarData, result.ValuesBSI.Transpose(ra))
 		}
 
@@ -136,7 +136,7 @@ func (db *Store) translate(result *samples.Samples) error {
 			r.DirectAdd(k)
 		}
 
-		return readFromU64(tx.Bucket(metaData), ra, func(id uint64, value []byte) error {
+		return readFromU64(tx.Bucket(metricsData), ra, func(id uint64, value []byte) error {
 			result.SeriesData[id] = result.Own(value)
 			return nil
 		})
@@ -161,7 +161,7 @@ func readSamples(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
-		err := readBSI(tx, root, shard, meta.KindDepth, match, &result.TsBSI)
+		err := readBSI(tx, root, shard, meta.KindDepth, match, &result.KindBSI)
 		if err != nil {
 			return fmt.Errorf("reading metric type %w", err)
 		}

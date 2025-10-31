@@ -35,7 +35,7 @@ func (a *API) Init(dataPath string) error {
 
 // ChunkQuerier implements storage.ChunkQueryable.
 func (a *API) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
-	panic("storage.ChunkQueryable  api is not supported")
+	panic("storage.ChunkQueryable  api is github.com/gernest/u128/internal/")
 }
 
 // StartTime implements storage.Storage.

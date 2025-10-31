@@ -155,8 +155,10 @@ func (s *Samples) Make() storage.SeriesSet {
 	s.ValuesBSI.Optimize()
 
 	for i := range s.ls {
-		fmt.Println(s.ls[i], s.Series[s.ls[i]].Slice())
+		fmt.Println(s.ls[i], s.Series[s.ls[i]].Slice(), buffer.WrapLabel(s.SeriesData[s.ls[i]]))
 	}
+	fmt.Println(s.KindBSI.AsMap(nil))
+	fmt.Println(s.TsBSI.AsMap(nil))
 	return s
 }
 
@@ -205,18 +207,20 @@ func (s *Samples) Iterator(c chunkenc.Iterator) chunkenc.Iterator {
 
 // Iter implements chunkenc.Iterator on top of Samples.
 type Iter struct {
-	po *roaring.Iterator
-	s  *Samples
-	hs *histogram.Histogram
-	fh *histogram.FloatHistogram
-	t  int64
-	f  float64
+	po  []uint64
+	idx int
+	s   *Samples
+	hs  *histogram.Histogram
+	fh  *histogram.FloatHistogram
+	t   int64
+	f   float64
 }
 
 // Init initializes i state.
 func (i *Iter) Init(s *Samples) {
 	s.Retain()
-	i.po = s.Series[s.active].Iterator()
+	i.s = s
+	i.po = s.Series[s.active].Slice()
 }
 
 // Reset clears i for reuse.
@@ -228,11 +232,13 @@ var _ chunkenc.Iterator = (*Iter)(nil)
 
 // Next implements chunkenc.Iterator.
 func (i *Iter) Next() chunkenc.ValueType {
-	idx, eof := i.po.Next()
-	if eof {
+	if i.idx >= len(i.po) {
 		i.s.Release()
 		return chunkenc.ValNone
 	}
+	idx := i.po[i.idx]
+	i.idx++
+	fmt.Println(idx, i.idx, i.po)
 	ts, _ := i.s.TsBSI.GetValue(idx)
 	i.t = int64(ts)
 	kind, ok := i.s.KindBSI.GetValue(idx)
@@ -264,7 +270,8 @@ func (i *Iter) Next() chunkenc.ValueType {
 
 // Seek implements chunkenc.Iterator.
 func (i *Iter) Seek(t int64) chunkenc.ValueType {
-	panic("not supported")
+	fmt.Println("seek", t)
+	return i.Next()
 }
 
 // At implements chunkenc.Iterator.
