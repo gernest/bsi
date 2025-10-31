@@ -86,6 +86,25 @@ func (s *Samples) Reset() {
 	s.ls = s.ls[:0]
 }
 
+// MakeSeries iterates all sample series and yields labels.
+func (s *Samples) MakeSeries(cb func(name, value []byte) error) error {
+	s.ls = s.ls[:0]
+	for v := range s.Series {
+		s.ls = append(s.ls, v)
+	}
+	slices.Sort(s.ls)
+	for i := range s.ls {
+		id := s.ls[i]
+		for name, value := range buffer.RangeLabels(s.SeriesData[id]) {
+			err := cb(name, value)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // MakeExemplar returns exemplars. Series values must be of kind.Exemplar.
 func (s *Samples) MakeExemplar() (result []exemplar.QueryResult) {
 	s.ls = s.ls[:0]

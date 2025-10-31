@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	db "github.com/gernest/u128/internal/storage"
@@ -192,12 +193,20 @@ func (q *querier) Close() error {
 	return nil
 }
 
-func (q *querier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.db.LabelValues(ctx, name, hints, matchers...)
+func (q *querier) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.db.LabelValues(q.lo, q.hi, makeLimit(hints), name, matchers...)
 }
 
-func (q *querier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.db.LabelNames(ctx, hints, matchers...)
+func (q *querier) LabelNames(_ context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.db.LabelNames(q.lo, q.hi, makeLimit(hints), matchers...)
+}
+
+func makeLimit(hints *storage.LabelHints) int {
+	limit := math.MaxInt
+	if hints != nil {
+		limit = hints.Limit
+	}
+	return limit
 }
 
 func (q *querier) Select(ctx context.Context, sort bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {

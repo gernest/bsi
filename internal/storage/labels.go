@@ -1,134 +1,158 @@
 package storage
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"io"
-	"math"
+	"slices"
 
+	"github.com/gernest/u128/internal/bitmaps"
+	"github.com/gernest/u128/internal/rbf"
+	"github.com/gernest/u128/internal/storage/keys"
 	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/u128/internal/storage/samples"
+	"github.com/gernest/u128/internal/storage/views"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"go.etcd.io/bbolt"
 )
 
 // LabelValues implements storage.LabelQuerier.
-//
-// Label are stored in search bucket, with label names used as sub bucket containing (value, uint64) tuples.
-// Unlike prometheus, labels are not scoped by time. This will always return global observed values for name.
-func (db *Store) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	var values []string
-	err := db.txt.View(func(tx *bbolt.Tx) error {
-		searchB := tx.Bucket(search)
-		b := searchB.Bucket(magic.Slice(name))
-		if b != nil {
-			// We have label values observed for the given name. Iterating on keys
-			// yields label values.
-			limit := math.MaxInt
-			if hints != nil {
-				limit = hints.Limit
-			}
-			return b.ForEach(func(k, _ []byte) error {
-				text := magic.String(k)
-				for _, m := range matchers {
-					if !m.Matches(text) {
-						return nil
-					}
-				}
-				values = append(values, string(k))
-				limit--
-				if limit > 0 {
-					return nil
-				}
-				return io.EOF
-			})
+func (db *Store) LabelValues(start, end int64, limit int, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	matchers = append([]*labels.Matcher{
+		{
+			Name:  labels.MetricName,
+			Type:  labels.MatchEqual,
+			Value: name,
+		},
+	}, matchers...)
+	match := map[string]struct{}{}
+	err := db.series(start, end, matchers, func(n, value []byte) error {
+		if magic.String(n) == name {
+			match[string(value)] = struct{}{}
+			limit--
 		}
-		return nil
+		if limit > 0 {
+			return nil
+		}
+		return io.EOF
 	})
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			return nil, nil, err
 		}
 	}
+	values := make([]string, 0, len(match))
+	for k := range match {
+		values = append(values, k)
+	}
+	slices.Sort(values)
 	return values, nil, nil
 }
 
 // LabelNames implements storage.LabelQuerier.
-//
-// Unlike prometheus, returned names are tot scoped time. We always return global observed label
-// names.
-func (db *Store) LabelNames(_ context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	var names []string
-	err := db.txt.View(func(tx *bbolt.Tx) error {
-		searchB := tx.Bucket(search)
-		limit := math.MaxInt
-		if hints != nil {
-			limit = hints.Limit
-		}
-
-		if len(matchers) == 0 {
-			// fast path: iterate over buckets only
-			cu := searchB.Cursor()
-			for k, v := cu.First(); k != nil && v == nil; k, v = cu.Next() {
-				names = append(names, string(k))
-				limit--
-				if limit > 0 {
-					continue
-				}
-				return io.EOF
-			}
+func (db *Store) LabelNames(start, end int64, limit int, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	match := map[string]struct{}{}
+	err := db.series(start, end, matchers, func(name, _ []byte) error {
+		match[string(name)] = struct{}{}
+		limit--
+		if limit > 0 {
 			return nil
 		}
-
-		for _, m := range matchers {
-			b := searchB.Bucket(magic.Slice(m.Name))
-			if b == nil {
-				continue
-			}
-			switch m.Type {
-			case labels.MatchEqual:
-				if b.Get(magic.Slice(m.Value)) == nil {
-					continue
-				}
-			case labels.MatchNotEqual:
-				cu := b.Cursor()
-				for k, _ := cu.First(); k != nil; k, _ = cu.Next() {
-					if m.Matches(magic.String(k)) {
-						continue
-					}
-					break
-				}
-			case labels.MatchRegexp:
-				cu := b.Cursor()
-				for k, _ := cu.First(); k != nil; k, _ = cu.Next() {
-					if !m.Matches(magic.String(k)) {
-						continue
-					}
-					break
-				}
-			case labels.MatchNotRegexp:
-				cu := b.Cursor()
-				for k, _ := cu.First(); k != nil; k, _ = cu.Next() {
-					if m.Matches(magic.String(k)) {
-						continue
-					}
-					break
-				}
-			}
-			names = append(names, m.Name)
-			limit--
-			if limit > 0 {
-				continue
-			}
-			return io.EOF
-		}
-		return nil
+		return io.EOF
 	})
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			return nil, nil, err
 		}
 	}
+	names := make([]string, 0, len(match))
+	for k := range match {
+		names = append(names, k)
+	}
+	slices.Sort(names)
 	return names, nil, nil
+}
+
+func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(name, value []byte) error) error {
+	shards, err := db.findShards(start, end, matchers)
+	if err != nil {
+		return err
+	}
+	defer shardsPool.Put(shards)
+
+	if shards.IsEmpty() {
+		return nil
+	}
+
+	result := samples.Get()
+	defer result.Release()
+
+	err = db.readSeries(result, shards, start, end)
+	if err != nil {
+		return nil
+	}
+
+	err = db.translate(result)
+	if err != nil {
+		return nil
+	}
+	return result.MakeSeries(cb)
+}
+
+func (db *Store) readSeries(result *samples.Samples, vs *views.List, start, end int64) error {
+	tx, err := db.rbf.Begin(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return err
+	}
+
+	for i := range vs.Shards {
+		shard := vs.Shards[i]
+		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
+		if !ok {
+			panic("missing ts root records")
+		}
+		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].TsDepth, bitmaps.BETWEEN, start, end)
+		if err != nil {
+			return err
+		}
+		if !ra.Any() {
+			continue
+		}
+
+		kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		if !ok {
+			panic("missing metric type root records")
+		}
+		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Float), 0)
+		if err != nil {
+			return err
+		}
+		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Histogram), 0)
+		if err != nil {
+			return err
+		}
+
+		// metric samples can either be histograms or floats.
+		ra = ra.Intersect(float.Union(histogram))
+		if !ra.Any() {
+			continue
+		}
+
+		ra, err = applyBSIFilters(tx, records, shard, ra, vs.Search)
+		if err != nil {
+			return fmt.Errorf("applying filters %w", err)
+		}
+
+		err = readSeries(result, vs.Meta[i], tx, records, shard, ra)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

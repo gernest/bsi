@@ -189,6 +189,20 @@ func readSamples(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *
 	return nil
 }
 
+func readSeries(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+	{
+		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
+		if !ok {
+			return fmt.Errorf("missing labels root record")
+		}
+		err := readBSI(tx, root, shard, meta.LabelsDepth, match, &result.LabelsBSI)
+		if err != nil {
+			return fmt.Errorf("reading labels %w", err)
+		}
+	}
+	return nil
+}
+
 func readExemplars(result *samples.Samples, meta views.Meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
