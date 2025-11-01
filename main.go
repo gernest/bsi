@@ -40,6 +40,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/gernest/bsi/internal/storage/api"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
@@ -1327,7 +1328,7 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
-				db.SetWriteNotified(remoteStorage)
+				// db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1440,37 +1441,32 @@ func main() {
 	logger.Info("See you next time!")
 }
 
-func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
-	db, err := tsdb.Open(
-		dir,
-		logger.With("component", "tsdb"),
-		reg,
-		opts,
-		stats,
-	)
+func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*api.API, error) {
+	db := new(api.API)
+	err := db.Init(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	reg.MustRegister(
-		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_lowest_timestamp_seconds",
-			Help: "Lowest timestamp value stored in the database.",
-		}, func() float64 {
-			bb := db.Blocks()
-			if len(bb) == 0 {
-				return float64(db.Head().MinTime() / 1000)
-			}
-			return float64(db.Blocks()[0].Meta().MinTime / 1000)
-		}), prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_min_time_seconds",
-			Help: "Minimum time bound of the head block.",
-		}, func() float64 { return float64(db.Head().MinTime() / 1000) }),
-		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_max_time_seconds",
-			Help: "Maximum timestamp of the head block.",
-		}, func() float64 { return float64(db.Head().MaxTime() / 1000) }),
-	)
+	// reg.MustRegister(
+	// 	prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	// 		Name: "prometheus_tsdb_lowest_timestamp_seconds",
+	// 		Help: "Lowest timestamp value stored in the database.",
+	// 	}, func() float64 {
+	// 		bb := db.Blocks()
+	// 		if len(bb) == 0 {
+	// 			return float64(db.Head().MinTime() / 1000)
+	// 		}
+	// 		return float64(db.Blocks()[0].Meta().MinTime / 1000)
+	// 	}), prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	// 		Name: "prometheus_tsdb_head_min_time_seconds",
+	// 		Help: "Minimum time bound of the head block.",
+	// 	}, func() float64 { return float64(db.Head().MinTime() / 1000) }),
+	// 	prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	// 		Name: "prometheus_tsdb_head_max_time_seconds",
+	// 		Help: "Maximum timestamp of the head block.",
+	// 	}, func() float64 { return float64(db.Head().MaxTime() / 1000) }),
+	// )
 
 	return db, nil
 }

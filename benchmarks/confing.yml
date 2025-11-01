@@ -1,0 +1,12 @@
+data-source:
+  # data source type [SIMULATOR|FILE]
+  type: FILE
+  # generate data on the fly
+  file:
+    location: benchmarks/100000-2025-10-31T00:00:00Z-2025-11-01T00:00:00Z-80s.tsbs
+loader:
+  db-specific:
+    adapter-write-url: "http://localhost:9090/write"
+  runner:
+    seed: 1
+    workers: 4
