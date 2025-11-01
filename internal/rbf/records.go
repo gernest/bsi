@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"iter"
+	"log/slog"
 	"unsafe"
 
 	"github.com/benbjohnson/immutable"
@@ -77,4 +79,85 @@ func (CompareRecord) Compare(a, b Key) int {
 		return i
 	}
 	return cmp.Compare(a.Column, b.Column)
+}
+
+type Size struct {
+	Pages [SizePageTypeBitmap + 1]uint64
+}
+
+func (s *Size) Bytes() (t uint64) {
+	for i := range s.Pages {
+		t += s.Pages[i]
+	}
+	t *= PageSize
+	return
+}
+
+type SizedPageType byte
+
+const (
+	SizePageTypeRootRecord SizedPageType = iota
+	SizePageTypeLeaf
+	SizePageTypeBranch
+	SizePageTypeBitmapHeader
+	SizePageTypeBitmap
+)
+
+var szt = [...]string{
+	"root",
+	"leaf",
+	"branch",
+	"bitmap_header",
+	"bitmap",
+}
+
+func (s SizedPageType) String() string {
+	return szt[s]
+}
+
+func toSized(typ int) SizedPageType {
+	switch typ {
+	case PageTypeRootRecord:
+		return SizePageTypeRootRecord
+	case PageTypeLeaf:
+		return SizePageTypeLeaf
+	case PageTypeBranch:
+		return SizePageTypeBranch
+	case PageTypeBitmapHeader:
+		return SizePageTypeBitmapHeader
+	case PageTypeBitmap:
+		return SizePageTypeBitmap
+	default:
+		panic(fmt.Sprintf("unexpected page type%v", typ))
+	}
+}
+func (tx *Tx) RangeSize() iter.Seq2[Key, Size] {
+	lo := tx.db.logger
+	if lo == nil {
+		lo = slog.Default()
+	}
+	records, err := tx.RootRecords()
+	if err != nil {
+		lo.Error("failed reading root records", "er", err)
+		return func(_ func(Key, Size) bool) {}
+	}
+
+	return func(yield func(Key, Size) bool) {
+
+		for itr := records.Iterator(); !itr.Done(); {
+			kx, pgno, _ := itr.Next()
+			var sz Size
+			err := tx.walkTree(pgno, 0, func(_, _, typ uint32, err error) error {
+				t := toSized(int(typ))
+				sz.Pages[t]++
+				return err
+			})
+			if err != nil {
+				lo.Error("failed walking tree", "key", kx, "er", err)
+			}
+			if !yield(kx, sz) {
+				return
+			}
+		}
+	}
 }
