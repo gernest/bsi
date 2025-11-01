@@ -124,7 +124,7 @@ func (db *DB) Open() (err error) {
 	// Open read-only database mmap.
 	if f, err := os.OpenFile(db.DataPath(), os.O_RDONLY, 0o600); err != nil {
 		return fmt.Errorf("open mmap file: %w", err)
-	} else if db.data, err = syswrap.Mmap(int(f.Fd()), int(db.cfg.MaxSize)); err != nil {
+	} else if db.data, err = syswrap.Mmap(int(f.Fd()), int(db.cfg.MaxSize), false); err != nil {
 		f.Close()
 		return fmt.Errorf("open mmap file: %w", err)
 	} else if err := f.Close(); err != nil {
@@ -200,7 +200,7 @@ func (db *DB) openWAL() (err error) {
 	// Open read-only mmap.
 	if f, err := os.OpenFile(db.WALPath(), os.O_RDONLY, 0o600); err != nil {
 		return fmt.Errorf("open wal mmap file: %w", err)
-	} else if db.wal, err = syswrap.Mmap(int(f.Fd()), int(db.cfg.MaxWALSize)); err != nil {
+	} else if db.wal, err = syswrap.Mmap(int(f.Fd()), int(db.cfg.MaxWALSize), false); err != nil {
 		f.Close()
 		return fmt.Errorf("map wal mmap file: %w", err)
 	} else if err := f.Close(); err != nil {

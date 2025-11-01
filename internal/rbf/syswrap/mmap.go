@@ -34,18 +34,18 @@ func SetMaxMapCount(max uint64) uint64 {
 // Mmap increments the global map count, and then calls syscall.Mmap. It
 // decrements the map count and returns an error if the count was over the
 // limit. If syscall.Mmap returns an error it also decrements the count.
-func Mmap(fd int, length int) (data []byte, err error) {
+func Mmap(fd int, length int, write bool) (data []byte, err error) {
 	mu.RLock()
 	defer mu.RUnlock()
 	if newCount := atomic.AddUint64(&mapCount, 1); newCount > maxMapCount {
 		atomic.AddUint64(&mapCount, ^uint64(0)) // decrement
 		return nil, ErrMaxMapCountReached
 	}
-	data, err = mmap(fd, length)
+	data, err = mmap(fd, length, write)
 	if err != nil {
 		atomic.AddUint64(&mapCount, ^uint64(0)) // decrement
 		if strings.Contains(err.Error(), "cannot allocate memory") {
-			err = errors.New("mmap 'cannot allocate memory' — please see the troubleshooting how-to in the FeatureBase docs.")
+			err = errors.New("mmap 'cannot allocate memory' — please see the troubleshooting how-to in the FeatureBase docs")
 		}
 	}
 	return data, err

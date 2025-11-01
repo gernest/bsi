@@ -19,14 +19,21 @@ import (
 	"unsafe"
 )
 
-func mmap(f int, size int) ([]byte, error) {
+func mmap(f int, size int, write bool) ([]byte, error) {
 	low, high := uint32(size), uint32(size>>32)
-	h, errno := syscall.CreateFileMapping(syscall.Handle(f), nil, syscall.PAGE_READONLY, high, low, nil)
+	protect := syscall.PAGE_READONLY
+	access := syscall.FILE_MAP_READ
+
+	if write {
+		protect = syscall.PAGE_READWRITE
+		access = syscall.FILE_MAP_WRITE
+	}
+	h, errno := syscall.CreateFileMapping(syscall.Handle(f), nil, uint32(protect), high, low, nil)
 	if h == 0 {
 		return nil, os.NewSyscallError("CreateFileMapping", errno)
 	}
 
-	addr, errno := syscall.MapViewOfFile(h, syscall.FILE_MAP_READ, 0, 0, uintptr(size))
+	addr, errno := syscall.MapViewOfFile(h, uint32(access), 0, 0, uintptr(size))
 	if addr == 0 {
 		return nil, os.NewSyscallError("MapViewOfFile", errno)
 	}
