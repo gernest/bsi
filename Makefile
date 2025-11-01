@@ -1,4 +1,4 @@
-TSBS_SCALE := 100000
+TSBS_SCALE := 1000
 # If GNU date is available, use it; otherwise, fall back to the standard date command
 # User can install GNU date on macOS via `brew install coreutils`
 DATE_CMD := $(shell which gdate 2>/dev/null || echo date)
@@ -20,7 +20,7 @@ tsbs-generate-data:
 		> $(TSBS_DATA_FILE)
 
 tsbs-load-data:
-	tsbs_load load prometheus --config=benchmarks/config.yml
+	tsbs_load load prometheus --config=./benchmarks/config.yml
 
 start:
 	./bsi --web.enable-remote-write-receiver
