@@ -29,15 +29,15 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 		return storage.EmptySeriesSet()
 	}
 
-	result := samples.Get()
-	defer result.Release()
+	var result samples.Samples
+	result.Init()
 
-	err = db.readTs(result, shards, hints.Start, hints.End)
+	err = db.readTs(&result, shards, hints.Start, hints.End)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	err = db.translate(result)
+	err = db.translate(&result)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}

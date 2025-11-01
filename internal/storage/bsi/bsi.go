@@ -69,6 +69,7 @@ func (b *BSI) Init() {
 func (b *BSI) Reset() {
 	b.exists.Containers.Reset()
 	b.sign.Containers.Reset()
+	clear(b.data)
 	b.data = b.data[:0]
 }
 

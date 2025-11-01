@@ -20,15 +20,15 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 	}
 	defer shardsPool.Put(shards)
 
-	result := samples.Get()
-	defer result.Release()
+	var result samples.Samples
+	result.Init()
 
-	err = db.readExemplar(result, shards, start, end)
+	err = db.readExemplar(&result, shards, start, end)
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.translate(result)
+	err = db.translate(&result)
 	if err != nil {
 		return nil, err
 	}

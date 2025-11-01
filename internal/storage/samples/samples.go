@@ -1,6 +1,10 @@
+// Package samples implements in memory representation of timeseries samples. We
+// use BSI encoding for all columns, both in memory and on disc. Decoding is done on demand
+// by promql.
 package samples
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"slices"
@@ -19,13 +23,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var samplePool = &sync.Pool{New: func() any {
-	s := new(Samples)
-	s.Init()
-	return s
-}}
-
-// Samples is a reusable container of timeseries samples.
+// Samples is a full representation of samples in memory.
 type Samples struct {
 	Series     map[uint64]*roaring.Bitmap
 	SeriesData map[uint64][]byte
@@ -35,34 +33,17 @@ type Samples struct {
 	TsBSI      bsi.BSI
 	ValuesBSI  bsi.BSI
 	ls         []uint64
-	b          buffer.B
-	ref        int32
 	active     uint64
 }
 
-func Get() *Samples {
-	s := samplePool.Get().(*Samples)
-	s.Retain()
-	return s
-}
-
+// Own copies v and returns the copy from internal buffer. This ensures sample
+// outlive the transaction used to retrieve translation data, v is assumed to be
+// memory mapped.
 func (s *Samples) Own(v []byte) []byte {
-	return s.b.Own(v)
+	return bytes.Clone(v)
 }
 
-// Release returns s to the pool.
-func (s *Samples) Release() {
-	s.ref--
-	if s.ref == 0 {
-		s.Reset()
-		samplePool.Put(s)
-	}
-}
-
-func (s *Samples) Retain() {
-	s.ref++
-}
-
+// Init initialize s fields.
 func (s *Samples) Init() {
 	s.Series = make(map[uint64]*roaring.Bitmap)
 	s.SeriesData = make(map[uint64][]byte)
@@ -82,8 +63,6 @@ func (s *Samples) Reset() {
 	clear(s.SeriesData)
 	clear(s.Data)
 	s.KindBSI.Reset()
-	s.b.B = s.b.B[:0]
-	s.ref = 0
 	s.ls = s.ls[:0]
 }
 
@@ -113,13 +92,15 @@ func (s *Samples) MakeExemplar() (result []exemplar.QueryResult) {
 		s.ls = append(s.ls, v)
 	}
 	slices.Sort(s.ls)
+	result = make([]exemplar.QueryResult, 0, len(s.ls))
 	var e prompb.Exemplar
 	scratch := labels.NewScratchBuilder(64)
 	for i := range s.ls {
 		id := s.ls[i]
 		series := buffer.WrapLabel(s.SeriesData[id]).Copy()
-		exe := make([]exemplar.Exemplar, 0)
-		for value := range s.Series[id].RangeAll() {
+		ra := s.Series[id]
+		exe := make([]exemplar.Exemplar, 0, ra.Count())
+		for value := range ra.RangeAll() {
 			exeID, _ := s.ValuesBSI.GetValue(value)
 			e.Reset()
 			e.Unmarshal(s.Data[exeID])
@@ -145,10 +126,8 @@ func (s *Samples) Make() storage.SeriesSet {
 	}
 	slices.Sort(s.ls)
 
-	s.Retain()
-
 	// We may have s stay in memory much longer depending on PromQL. We ensure
-	// small memory footprint is occupied until s is released.
+	// small memory footprint is occupied.
 	s.LabelsBSI.Reset() // we never use this again.
 	s.KindBSI.Optimize()
 	s.TsBSI.Optimize()
@@ -158,7 +137,6 @@ func (s *Samples) Make() storage.SeriesSet {
 
 // At implements storage.SeriesSet.
 func (s *Samples) At() storage.Series {
-	s.Retain()
 	return &series{
 		id: s.active,
 		s:  s,
@@ -168,7 +146,6 @@ func (s *Samples) At() storage.Series {
 // Next implements storage.SeriesSet.
 func (s *Samples) Next() bool {
 	if len(s.ls) == 0 {
-		s.Release()
 		return false
 	}
 	s.active = s.ls[0]
@@ -190,7 +167,6 @@ type series struct {
 var _ storage.Series = (*series)(nil)
 
 func (s *series) Release() {
-	s.s.Release()
 	s.s = nil
 }
 
@@ -274,22 +250,30 @@ func (i *Iter) At() (int64, float64) {
 	return int64(ts), math.Float64frombits(v)
 }
 
+var histogramPool = &sync.Pool{New: func() any { return new(prompb.Histogram) }}
+
 // AtHistogram implements chunkenc.Iterator.
 func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	ts, _ := i.s.s.TsBSI.GetValue(i.id)
 	v, _ := i.s.s.ValuesBSI.GetValue(i.id)
-	var h prompb.Histogram
+	h := histogramPool.Get().(*prompb.Histogram)
 	h.Unmarshal(i.s.s.Data[v])
-	return int64(ts), h.ToIntHistogram()
+	r := h.ToIntHistogram()
+	h.Reset()
+	histogramPool.Put(h)
+	return int64(ts), r
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	ts, _ := i.s.s.TsBSI.GetValue(i.id)
 	v, _ := i.s.s.ValuesBSI.GetValue(i.id)
-	var h prompb.Histogram
+	h := histogramPool.Get().(*prompb.Histogram)
 	h.Unmarshal(i.s.s.Data[v])
-	return int64(ts), h.ToFloatHistogram()
+	r := h.ToFloatHistogram()
+	h.Reset()
+	histogramPool.Put(h)
+	return int64(ts), r
 }
 
 // AtT implements chunkenc.Iterator.

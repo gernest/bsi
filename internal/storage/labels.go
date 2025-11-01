@@ -84,15 +84,15 @@ func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(na
 		return nil
 	}
 
-	result := samples.Get()
-	defer result.Release()
+	var result samples.Samples
+	result.Init()
 
-	err = db.readSeries(result, shards, start, end)
+	err = db.readSeries(&result, shards, start, end)
 	if err != nil {
 		return nil
 	}
 
-	err = db.translate(result)
+	err = db.translate(&result)
 	if err != nil {
 		return nil
 	}
