@@ -4,8 +4,8 @@ import (
 	"math/bits"
 	"slices"
 
+	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/bitmaps"
 )
 
 // BSI contains encoded BSI (column, value) tuple,

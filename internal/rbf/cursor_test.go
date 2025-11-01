@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/rbf"
 	"github.com/stretchr/testify/assert"
 )
 

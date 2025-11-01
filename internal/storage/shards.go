@@ -5,10 +5,10 @@ import (
 	"encoding/binary"
 	"sort"
 
-	"github.com/gernest/u128/internal/bitmaps"
-	"github.com/gernest/u128/internal/checksum"
-	"github.com/gernest/u128/internal/storage/magic"
-	"github.com/gernest/u128/internal/storage/views"
+	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/checksum"
+	"github.com/gernest/bsi/internal/storage/magic"
+	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )

@@ -12,8 +12,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/gernest/u128/internal/rbf"
-	rbfcfg "github.com/gernest/u128/internal/rbf/cfg"
+	"github.com/gernest/bsi/internal/rbf"
+	rbfcfg "github.com/gernest/bsi/internal/rbf/cfg"
 )
 
 var quickCheckN *int = flag.Int("quickchecks", 10, "The number of iterations for each quickcheck")

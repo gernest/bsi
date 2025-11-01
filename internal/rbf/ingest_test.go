@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gernest/bsi/internal/checksum"
+	"github.com/gernest/bsi/internal/rbf/cfg"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/checksum"
-	"github.com/gernest/u128/internal/rbf/cfg"
 	"github.com/stretchr/testify/require"
 )
 

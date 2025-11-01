@@ -1,4 +1,4 @@
-module github.com/gernest/u128
+module github.com/gernest/bsi
 
 go 1.25.0
 

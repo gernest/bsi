@@ -3,11 +3,11 @@ package storage
 import (
 	"fmt"
 
-	"github.com/gernest/u128/internal/bitmaps"
-	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/keys"
-	"github.com/gernest/u128/internal/storage/samples"
-	"github.com/gernest/u128/internal/storage/views"
+	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/rbf"
+	"github.com/gernest/bsi/internal/storage/keys"
+	"github.com/gernest/bsi/internal/storage/samples"
+	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 )

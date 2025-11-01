@@ -4,11 +4,11 @@ import (
 	"math/bits"
 	"sync"
 
+	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/storage/keys"
+	"github.com/gernest/bsi/internal/storage/magic"
+	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/bitmaps"
-	"github.com/gernest/u128/internal/storage/keys"
-	"github.com/gernest/u128/internal/storage/magic"
-	"github.com/gernest/u128/internal/storage/tsid"
 )
 
 type Pool struct {

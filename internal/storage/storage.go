@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gernest/bsi/internal/rbf"
+	"github.com/gernest/bsi/internal/storage/magic"
+	"github.com/gernest/bsi/internal/storage/rows"
+	"github.com/gernest/bsi/internal/storage/seq"
+	"github.com/gernest/bsi/internal/storage/tsid"
+	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/gernest/roaring/shardwidth"
-	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/magic"
-	"github.com/gernest/u128/internal/storage/rows"
-	"github.com/gernest/u128/internal/storage/seq"
-	"github.com/gernest/u128/internal/storage/tsid"
-	"github.com/gernest/u128/internal/storage/views"
 	"go.etcd.io/bbolt"
 )
 

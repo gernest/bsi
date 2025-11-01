@@ -3,11 +3,11 @@ package storage
 import (
 	"fmt"
 
+	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/rbf"
+	"github.com/gernest/bsi/internal/storage/raw"
+	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/bitmaps"
-	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/raw"
-	"github.com/gernest/u128/internal/storage/views"
 )
 
 func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps.OP, predicate, end int64) (*roaring.Bitmap, error) {

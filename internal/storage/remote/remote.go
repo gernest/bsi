@@ -3,10 +3,10 @@ package remote
 import (
 	"math"
 
-	"github.com/gernest/u128/internal/storage/buffer"
-	"github.com/gernest/u128/internal/storage/keys"
-	"github.com/gernest/u128/internal/storage/rows"
-	"github.com/gernest/u128/internal/storage/tsid"
+	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/keys"
+	"github.com/gernest/bsi/internal/storage/rows"
+	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/prometheus/prometheus/prompb"
 )
 

@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	db "github.com/gernest/u128/internal/storage"
-	"github.com/gernest/u128/internal/storage/rows"
+	db "github.com/gernest/bsi/internal/storage"
+	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -35,7 +35,7 @@ func (a *API) Init(dataPath string) error {
 
 // ChunkQuerier implements storage.ChunkQueryable.
 func (a *API) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
-	panic("storage.ChunkQueryable  api is github.com/gernest/u128/internal/")
+	panic("storage.ChunkQueryable  api is github.com/gernest/bsi/internal/")
 }
 
 // StartTime implements storage.Storage.

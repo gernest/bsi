@@ -3,7 +3,7 @@ package storage
 import (
 	"strings"
 
-	"github.com/gernest/u128/internal/storage/magic"
+	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"

@@ -10,10 +10,10 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/keys"
+	"github.com/gernest/bsi/internal/storage/raw"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/storage/buffer"
-	"github.com/gernest/u128/internal/storage/keys"
-	"github.com/gernest/u128/internal/storage/raw"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

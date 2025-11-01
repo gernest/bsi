@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/benbjohnson/immutable"
+	"github.com/gernest/bsi/internal/rbf/vprint"
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/rbf/vprint"
 	"github.com/pkg/errors"
 )
 

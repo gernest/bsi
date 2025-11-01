@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
+	. "github.com/gernest/bsi/internal/rbf/vprint" // nolint:staticcheck
 	"github.com/gernest/roaring"
-	. "github.com/gernest/u128/internal/rbf/vprint" // nolint:staticcheck
 )
 
 func getRoaringIter(bitsToSet ...uint64) roaring.RoaringIterator {

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/datadriven"
-	"github.com/gernest/u128/internal/storage/buffer"
-	"github.com/gernest/u128/internal/storage/rows"
+	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 

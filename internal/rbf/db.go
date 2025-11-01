@@ -14,8 +14,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	rbfcfg "github.com/gernest/u128/internal/rbf/cfg"
-	"github.com/gernest/u128/internal/rbf/syswrap"
+	rbfcfg "github.com/gernest/bsi/internal/rbf/cfg"
+	"github.com/gernest/bsi/internal/rbf/syswrap"
 )
 
 var ErrClosed = errors.New("rbf: database closed")

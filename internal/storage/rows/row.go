@@ -5,8 +5,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/gernest/u128/internal/storage/buffer"
-	"github.com/gernest/u128/internal/storage/keys"
+	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
