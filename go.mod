@@ -9,6 +9,7 @@ require (
 	github.com/benbjohnson/immutable v0.4.3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cockroachdb/datadriven v1.0.3-0.20250911232732-d959cf14706c
+	github.com/docker/go-units v0.5.0
 	github.com/felixge/fgprof v0.9.5
 	github.com/gernest/roaring v0.30.0
 	github.com/google/uuid v1.6.0
@@ -74,7 +75,6 @@ require (
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/docker/docker v28.4.0+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.35.0 // indirect
