@@ -1,6 +1,3 @@
-// Copyright (c) Geofrey Ernest
-// SPDX-License-Identifier: AGPL-3.0-only
-
 package bitmaps
 
 import (
