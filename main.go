@@ -41,6 +41,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
 	"github.com/gernest/bsi/internal/storage/api"
+	_ "github.com/gernest/bsi/internal/ui"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
