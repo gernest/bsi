@@ -6,7 +6,7 @@ import (
 	"github.com/gernest/roaring"
 	"github.com/gernest/u128/internal/bitmaps"
 	"github.com/gernest/u128/internal/rbf"
-	"github.com/gernest/u128/internal/storage/bsi"
+	"github.com/gernest/u128/internal/storage/raw"
 	"github.com/gernest/u128/internal/storage/views"
 )
 
@@ -17,7 +17,7 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps
 	return bitmaps.Range(cu, op, shard, uint64(depth), predicate, end)
 }
 
-func readBSI(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap, result *bsi.BSI) error {
+func readRaw(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap, result *raw.BSI) error {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
 

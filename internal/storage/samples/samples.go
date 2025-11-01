@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/gernest/roaring"
-	"github.com/gernest/u128/internal/storage/bsi"
 	"github.com/gernest/u128/internal/storage/buffer"
 	"github.com/gernest/u128/internal/storage/keys"
+	"github.com/gernest/u128/internal/storage/raw"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,10 +28,10 @@ type Samples struct {
 	Series     map[uint64]*roaring.Bitmap
 	SeriesData map[uint64][]byte
 	Data       map[uint64][]byte
-	KindBSI    bsi.BSI
-	LabelsBSI  bsi.BSI
-	TsBSI      bsi.BSI
-	ValuesBSI  bsi.BSI
+	KindBSI    raw.BSI
+	LabelsBSI  raw.BSI
+	TsBSI      raw.BSI
+	ValuesBSI  raw.BSI
 	ls         []uint64
 	active     uint64
 }

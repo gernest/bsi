@@ -1,8 +1,4 @@
-// Package bsi implements api for working with raw sample values read from rbf storage.
-// We store sample Timestamp and Value as BSI encoded values, to simplify processing
-// and improve memory footprint, we pass around these values in raw format and allow
-// retrieving of individual values on demand.
-package bsi
+package raw
 
 import (
 	"math/bits"
