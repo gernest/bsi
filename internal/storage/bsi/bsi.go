@@ -82,26 +82,6 @@ func (b *BSI) Optimize() {
 	}
 }
 
-// Union merges other bsi into b.
-func (b *BSI) Union(other ...*BSI) {
-	for _, o := range other {
-		b.exists.UnionInPlace(o.exists)
-		b.sign.UnionInPlace(o.sign)
-		if len(b.data) < len(o.data) {
-			b.data = slices.Grow(b.data, len(o.data))[:len(o.data)]
-		}
-
-		for i := range o.data {
-			if b.data[i] == nil {
-				b.data[i] = o.data[i]
-				continue
-			}
-			b.data[i].UnionInPlace(o.data[i])
-		}
-	}
-	b.Optimize()
-}
-
 // GetValue reads value encoded at column.
 func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 	if !b.exists.Contains(column) {
@@ -118,8 +98,6 @@ func (b *BSI) GetValue(column uint64) (val uint64, exists bool) {
 	val = uint64((2*(int64(val)>>63) + 1) * int64(val&^(1<<63)))
 	return val, true
 }
-
-// GetColumns returns al columns with given predicate.
 
 func (b *BSI) AsMap(filters *roaring.Bitmap) (result map[uint64]uint64) {
 	result = make(map[uint64]uint64)
