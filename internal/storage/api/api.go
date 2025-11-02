@@ -47,6 +47,14 @@ func (a *API) MaxTs() (int64, error) {
 	return a.db.MaxTs()
 }
 
+func (a *API) Stats(statsByLabelName string, limit int) (result *tsdb.Stats, err error) {
+	return a.db.Stats(statsByLabelName, limit)
+}
+
+func (a *API) Snapshot(dir string, _ bool) error {
+	return a.db.Backup(dir)
+}
+
 // Close implements storage.Storage .
 func (a *API) Close() error {
 	return a.db.Close()

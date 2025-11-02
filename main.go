@@ -1743,8 +1743,8 @@ func (s *readyStorage) Close() error {
 func (s *readyStorage) CleanTombstones() error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.CleanTombstones()
+		case *api.API:
+			return nil
 		case *agent.DB:
 			return agent.ErrUnsupported
 		default:
@@ -1758,8 +1758,8 @@ func (s *readyStorage) CleanTombstones() error {
 func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.BlockMetas(), nil
+		case *api.API:
+			return []tsdb.BlockMeta{}, nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
@@ -1788,7 +1788,7 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
+		case *api.API:
 			return db.Snapshot(dir, withHead)
 		case *agent.DB:
 			return agent.ErrUnsupported
@@ -1803,8 +1803,8 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.Head().Stats(statsByLabelName, limit), nil
+		case *api.API:
+			return db.Stats(statsByLabelName, limit)
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:

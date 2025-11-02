@@ -11,3 +11,6 @@ Fast and cost effective prometheus
 ## deprecations
 - `prometheus_tsdb_head_min_time_seconds` is removed
 - `prometheus_tsdb_head_max_time_seconds` is renamed to `prometheus_tsdb_max_time_seconds`
+- `seriesCountByLabelValuePair` from TSDBStatus is not computed.
+- `memoryInBytesByLabelName` from TSDBStatus is not computed ( we do not keep labels in memory).
+- `CleanTombstones`, `Delete`, and `BlockMetas` from api_v1.TSDBAdminStats and api_v2.TSDBAdmin  interfaces are a noop.
