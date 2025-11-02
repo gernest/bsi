@@ -81,6 +81,42 @@ func (CompareRecord) Compare(a, b Key) int {
 	return cmp.Compare(a.Column, b.Column)
 }
 
+func (tx *Tx) DeleteShard(shard uint64) error {
+
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+
+	if tx.db == nil {
+		return ErrTxClosed
+	} else if !tx.writable {
+		return ErrTxNotWritable
+	}
+
+	// Read list of root records.
+	records, err := tx.RootRecords()
+	if err != nil {
+		return err
+	}
+	it := records.Iterator()
+	it.Seek(Key{Shard: shard})
+
+	for {
+		name, page, ok := it.Next()
+		if !ok || name.Shard != shard {
+			break
+		}
+		if err := tx.deallocateTree(page); err != nil {
+			return err
+		}
+		records = records.Delete(name)
+	}
+	if err := tx.writeRootRecordPages(records); err != nil {
+		return fmt.Errorf("write bitmaps root records %w", err)
+	}
+	tx.rootRecords = records
+	return nil
+}
+
 type Size struct {
 	Pages [SizePageTypeBitmap + 1]uint64
 }

@@ -42,6 +42,6 @@ func newStorage(t testutil.T) storage.Storage {
 	tb := t.(testing.TB)
 	tb.Helper()
 	a := new(API)
-	require.NoError(tb, a.Init(tb.TempDir()))
+	require.NoError(tb, a.Init(tb.TempDir(), nil))
 	return a
 }

@@ -1444,7 +1444,7 @@ func main() {
 
 func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*api.API, error) {
 	db := new(api.API)
-	err := db.Init(dir)
+	err := db.Init(dir, logger.With("component", "tsdb"))
 	if err != nil {
 		return nil, err
 	}

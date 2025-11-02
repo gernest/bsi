@@ -1,11 +1,15 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync/atomic"
 
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
@@ -14,6 +18,7 @@ import (
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/gernest/roaring/shardwidth"
+	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
 )
 
@@ -23,10 +28,17 @@ var tsidPool tsid.Pool
 type Store struct {
 	rbf *rbf.DB
 	txt *bbolt.DB
+	lo  *slog.Logger
+
+	retention atomic.Int64
+	deletion  atomic.Uint64
 }
 
 // Init initializes store on dataPath.
-func (db *Store) Init(dataPath string) error {
+func (db *Store) Init(dataPath string, lo *slog.Logger) error {
+	if lo == nil {
+		lo = promslog.NewNopLogger()
+	}
 	err := os.MkdirAll(dataPath, 0755)
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
@@ -74,6 +86,7 @@ func (db *Store) Init(dataPath string) error {
 	})
 
 	db.txt = tdb
+	db.lo = lo
 
 	return nil
 }
@@ -140,24 +153,51 @@ func (db *Store) AddRows(rows *rows.Rows) error {
 	if err != nil {
 		return err
 	}
-	return db.saveMetadata(ma)
+	err = db.saveMetadata(ma)
+	if err != nil {
+		return err
+	}
+	if db.deletion.Load() != 0 {
+		// cleanup is expensive, avoid executing it in hot path.
+		go db.cleanup()
+	}
+	return nil
 }
 
 func (db *Store) saveMetadata(ma views.Map) error {
 	var key [8]byte
 	return db.txt.Update(func(tx *bbolt.Tx) error {
 		adminB := tx.Bucket(admin)
+		cu := adminB.Cursor()
+		var first views.Meta
+		if _, v := cu.First(); v != nil {
+			first = magic.ReinterpretSlice[views.Meta](v)[0]
+		}
+		shards := make([]uint64, 0, len(ma))
+		for k := range ma {
+			shards = append(shards, k)
+		}
+		slices.Sort(shards)
 
-		for shard, data := range ma {
+		retention := db.retention.Load()
+
+		for _, shard := range shards {
+			data := ma[shard]
 			binary.BigEndian.PutUint64(key[:], shard)
-			if v := adminB.Get(key[:]); v != nil {
+			if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
 				data.Meta.Update(&magic.ReinterpretSlice[views.Meta](v)[0])
 			}
+
 			err := adminB.Put(key[:], data.Meta.Bytes())
 			if err != nil {
 				return fmt.Errorf("updating shard data %w", err)
 			}
+
+			if retention != 0 && db.deletion.Load() == 0 && (data.Meta.Max-first.Max) >= retention {
+				db.deletion.Store(shard)
+			}
 		}
+
 		return nil
 	})
 }

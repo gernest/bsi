@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -29,8 +30,8 @@ type API struct {
 var _ storage.Storage = (*API)(nil)
 
 // Init setup databases.
-func (a *API) Init(dataPath string) error {
-	return a.db.Init(dataPath)
+func (a *API) Init(dataPath string, lo *slog.Logger) error {
+	return a.db.Init(dataPath, lo)
 }
 
 // ChunkQuerier implements storage.ChunkQueryable.
