@@ -14,7 +14,7 @@ func Write(rows *rows.Rows, ids *tsid.B) (w *prompb.WriteRequest) {
 	series := map[uint64]*prompb.TimeSeries{}
 	w = &prompb.WriteRequest{}
 	for i := range ids.B {
-		id := ids.B[i].ID()
+		id := ids.B[i][0].Value
 		sx, ok := series[id]
 		if !ok {
 			w.Timeseries = append(w.Timeseries, prompb.TimeSeries{})

@@ -1,4 +1,4 @@
-TSBS_SCALE := 1000
+TSBS_SCALE := 10000
 # If GNU date is available, use it; otherwise, fall back to the standard date command
 # User can install GNU date on macOS via `brew install coreutils`
 DATE_CMD := $(shell which gdate 2>/dev/null || echo date)
@@ -24,3 +24,8 @@ tsbs-load-data:
 
 start:
 	./bsi --web.enable-remote-write-receiver
+
+cpu:
+	go tool pprof -http=:8080 http://localhost:9090/debug/pprof/profile
+heap:
+	go tool pprof -http=:8080 http://localhost:9090/debug/pprof/heap

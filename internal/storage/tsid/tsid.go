@@ -45,8 +45,3 @@ type Column struct {
 	ID    uint64
 	Value uint64
 }
-
-// ID helper method to return series ID.
-func (id ID) ID() uint64 {
-	return id[0].Value
-}

@@ -114,8 +114,8 @@ func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 			continue
 		}
 		la := values[i]
-		hi = max(la.ID(), hi)
-		bitmaps.BSI(labels, id, int64(la.ID()))
+		hi = max(la[0].Value, hi)
+		bitmaps.BSI(labels, id, int64(la[0].Value))
 		for j := range la {
 			if j == 0 {
 				continue

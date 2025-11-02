@@ -120,7 +120,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 			}
 
 			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id.ID()), r.Labels[i])
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id[0].Value), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
 			}
