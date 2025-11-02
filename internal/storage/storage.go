@@ -85,13 +85,26 @@ func (db *Store) Close() error {
 	)
 }
 
-// StartTime implements storage.Storage.
-func (db *Store) StartTime() (ts int64, err error) {
+// MinTs returns the lowest timestamp currently observed in the database.
+func (db *Store) MinTs() (ts int64, err error) {
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		adminB := tx.Bucket(admin)
 		_, v := adminB.Cursor().First()
 		if v != nil {
 			ts = magic.ReinterpretSlice[views.Meta](v)[0].Min
+		}
+		return nil
+	})
+	return
+}
+
+// MaxTs returns the highest timestamp currently observed in the database.
+func (db *Store) MaxTs() (ts int64, err error) {
+	err = db.txt.View(func(tx *bbolt.Tx) error {
+		adminB := tx.Bucket(admin)
+		_, v := adminB.Cursor().Last()
+		if v != nil {
+			ts = magic.ReinterpretSlice[views.Meta](v)[0].Max
 		}
 		return nil
 	})

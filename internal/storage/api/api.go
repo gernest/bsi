@@ -40,7 +40,11 @@ func (a *API) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 
 // StartTime implements storage.Storage.
 func (a *API) StartTime() (int64, error) {
-	return a.db.StartTime()
+	return a.db.MinTs()
+}
+
+func (a *API) MaxTs() (int64, error) {
+	return a.db.MaxTs()
 }
 
 // Close implements storage.Storage .
