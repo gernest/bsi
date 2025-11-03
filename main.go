@@ -1448,6 +1448,11 @@ func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registere
 	if err != nil {
 		return nil, err
 	}
+	if opts != nil {
+		if opts.RetentionDuration > 0 {
+			db.SetRetention(opts.RetentionDuration)
+		}
+	}
 
 	reg.MustRegister(
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{

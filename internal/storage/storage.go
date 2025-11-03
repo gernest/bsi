@@ -91,6 +91,10 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 	return nil
 }
 
+func (db *Store) SetRetention(retention int64) {
+	db.retention.Store(retention)
+}
+
 // Close implements storage.Storage.
 func (db *Store) Close() error {
 	return errors.Join(

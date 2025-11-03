@@ -34,6 +34,10 @@ func (a *API) Init(dataPath string, lo *slog.Logger) error {
 	return a.db.Init(dataPath, lo)
 }
 
+func (a *API) SetRetention(retention int64) {
+	a.db.SetRetention(retention)
+}
+
 // ChunkQuerier implements storage.ChunkQueryable.
 func (a *API) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	panic("storage.ChunkQueryable  api is not supported")
