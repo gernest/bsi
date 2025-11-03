@@ -192,16 +192,18 @@ func (s *series) Iterator(c chunkenc.Iterator) chunkenc.Iterator {
 
 // Iter implements chunkenc.Iterator on top of Samples.
 type Iter struct {
-	po  *roaring.Iterator
+	ts  raw.Sorted
 	s   *series
-	id  uint64
+	idx int
 	typ chunkenc.ValueType
 }
 
 // Init initializes i state.
 func (i *Iter) Init(s *series) {
 	i.s = s
-	i.po = s.s.Series[s.id].Iterator()
+	s.s.TsBSI.Sorted(s.s.Series[s.id], &i.ts)
+	i.idx = -1
+	i.typ = chunkenc.ValNone
 }
 
 // Reset clears i for reuse.
@@ -213,17 +215,16 @@ var _ chunkenc.Iterator = (*Iter)(nil)
 
 // Next implements chunkenc.Iterator.
 func (i *Iter) Next() chunkenc.ValueType {
-	id, eof := i.po.Next()
-	if eof {
+	i.idx++
+	if i.idx >= i.ts.Len() {
 		i.s.Release()
 		i.s = nil
 		i.typ = chunkenc.ValNone
 		return i.typ
 	}
-	i.id = id
-	kind, ok := i.s.s.KindBSI.GetValue(id)
+	kind, ok := i.s.s.KindBSI.GetValue(i.ts.ID[i.idx])
 	if !ok {
-		panic(fmt.Sprintf("missing metric type at %d", id))
+		panic(fmt.Sprintf("missing metric type at %d", i.ts.ID[i.idx]))
 	}
 	switch keys.Kind(kind) {
 	case keys.Float:
@@ -245,8 +246,8 @@ func (i *Iter) Seek(t int64) chunkenc.ValueType {
 
 // At implements chunkenc.Iterator.
 func (i *Iter) At() (int64, float64) {
-	ts, _ := i.s.s.TsBSI.GetValue(i.id)
-	v, _ := i.s.s.ValuesBSI.GetValue(i.id)
+	ts := i.ts.Value[i.idx]
+	v, _ := i.s.s.ValuesBSI.GetValue(i.ts.ID[i.idx])
 	return int64(ts), math.Float64frombits(v)
 }
 
@@ -254,8 +255,8 @@ var histogramPool = &sync.Pool{New: func() any { return new(prompb.Histogram) }}
 
 // AtHistogram implements chunkenc.Iterator.
 func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	ts, _ := i.s.s.TsBSI.GetValue(i.id)
-	v, _ := i.s.s.ValuesBSI.GetValue(i.id)
+	ts := i.ts.Value[i.idx]
+	v, _ := i.s.s.ValuesBSI.GetValue(i.ts.ID[i.idx])
 	h := histogramPool.Get().(*prompb.Histogram)
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToIntHistogram()
@@ -266,8 +267,8 @@ func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	ts, _ := i.s.s.TsBSI.GetValue(i.id)
-	v, _ := i.s.s.ValuesBSI.GetValue(i.id)
+	ts := i.ts.Value[i.idx]
+	v, _ := i.s.s.ValuesBSI.GetValue(i.ts.ID[i.idx])
 	h := histogramPool.Get().(*prompb.Histogram)
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToFloatHistogram()
@@ -278,8 +279,7 @@ func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.
 
 // AtT implements chunkenc.Iterator.
 func (i *Iter) AtT() int64 {
-	ts, _ := i.s.s.TsBSI.GetValue(i.id)
-	return int64(ts)
+	return i.ts.Value[i.idx]
 }
 
 // Err implements chunkenc.Iterator.

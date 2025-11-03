@@ -100,11 +100,19 @@ func (s Map) Get(shard uint64) *Data {
 	return r
 }
 
+// Data stores batched roaring bitmaps for a single shard.All methods accepts kinds slice
+// which is used to skip rows which are marked as keys.None, that happens when there is metadata
+// rows mixed during ingestion.
 type Data struct {
 	Columns map[uint64]*roaring.Bitmap
 	Meta    Meta
 }
 
+// AddIndex builds search index from tsid.Prometheus validates that label names are unique,
+// which allows us to treat each label name observed as a unique bitmap.
+//
+// We encode series id as BSI in (keys.MetricsLabels, each label name generates a unique bitmap
+// that stores the (column_id, label_value) tuple encoded BSI.
 func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 	labels := s.Get(keys.MetricsLabels)
 	var hi uint64
@@ -128,6 +136,10 @@ func (s *Data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 
 }
 
+// AddTS encodes values as BSI in keys.MetricsTimestamp bitmaps. Unlike prometheus
+// we never check for Out Of Order series because they are irrelevant. Unlike Prometheus
+// series are automatically ordered by the way they were observed, and samples search is
+// always sorted by timestamp.
 func (s *Data) AddTS(start uint64, values []int64, kinds []keys.Kind) {
 	ra := s.Get(keys.MetricsTimestamp)
 	var lo, hi int64
