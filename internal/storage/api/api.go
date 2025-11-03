@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -40,7 +41,7 @@ func (a *API) SetRetention(retention int64) {
 
 // ChunkQuerier implements storage.ChunkQueryable.
 func (a *API) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
-	panic("storage.ChunkQueryable  api is not supported")
+	return nil, errors.New("unsupported operation with BSI storage")
 }
 
 // StartTime implements storage.Storage.
