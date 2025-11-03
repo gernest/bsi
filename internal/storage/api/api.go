@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"path/filepath"
 	"time"
 
 	db "github.com/gernest/bsi/internal/storage"
@@ -32,7 +33,7 @@ var _ storage.Storage = (*API)(nil)
 
 // Init setup databases.
 func (a *API) Init(dataPath string, lo *slog.Logger) error {
-	return a.db.Init(dataPath, lo)
+	return a.db.Init(filepath.Join(dataPath, "bsi"), lo)
 }
 
 func (a *API) SetRetention(retention int64) {
