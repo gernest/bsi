@@ -192,8 +192,8 @@ func (s *series) Iterator(c chunkenc.Iterator) chunkenc.Iterator {
 
 // Iter implements chunkenc.Iterator on top of Samples.
 type Iter struct {
-	ts  raw.Sorted
 	s   *series
+	ts  raw.Sorted
 	idx int
 	typ chunkenc.ValueType
 }
