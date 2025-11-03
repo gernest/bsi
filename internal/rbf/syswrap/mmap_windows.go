@@ -51,3 +51,8 @@ func munmap(b []byte) error {
 	}
 	return nil
 }
+
+func msync(b []byte) error {
+	// TODO: Figure out how to do msync on Windows.
+	return nil
+}

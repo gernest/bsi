@@ -60,3 +60,7 @@ func Munmap(b []byte) (err error) {
 	}
 	return err
 }
+
+func Msync(data []byte) error {
+	return msync(data)
+}

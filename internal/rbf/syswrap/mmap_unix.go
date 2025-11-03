@@ -30,3 +30,8 @@ func mmap(f int, length int, write bool) ([]byte, error) {
 func munmap(b []byte) (err error) {
 	return unix.Munmap(b)
 }
+
+// msync writes any modified data to persistent storage.
+func msync(b []byte) error {
+	return unix.Msync(b, unix.MS_SYNC)
+}
