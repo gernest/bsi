@@ -6,7 +6,6 @@ import (
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/labels"
@@ -58,7 +57,7 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 
 	for i := range vs.meta {
 		shard := uint64(vs.meta[i].shard)
-		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
+		tsP, ok := records.Get(rbf.Key{Column: MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
@@ -70,20 +69,20 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			continue
 		}
 
-		kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		kind, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 		if !ok {
 			panic("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Float), 0)
+		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Float), 0)
 		if err != nil {
 			return err
 		}
 
-		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Histogram), 0)
 		if err != nil {
 			return err
 		}
-		floatHistogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.FloatHistogram), 0)
+		floatHistogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(FloatHistogram), 0)
 		if err != nil {
 			return err
 		}
@@ -119,13 +118,13 @@ func (db *Store) translate(result *samples.Samples) error {
 	}
 
 	return db.txt.View(func(tx *bbolt.Tx) error {
-		if ra := result.KindBSI.EQ(int64(keys.Histogram)); ra.Any() {
+		if ra := result.KindBSI.EQ(int64(Histogram)); ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
-		if ra := result.KindBSI.EQ(int64(keys.FloatHistogram)); ra.Any() {
+		if ra := result.KindBSI.EQ(int64(FloatHistogram)); ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
-		if ra := result.KindBSI.EQ(int64(keys.Exemplar)); ra.Any() {
+		if ra := result.KindBSI.EQ(int64(Exemplar)); ra.Any() {
 			readData(tx, exemplarData, result.ValuesBSI.Transpose(ra))
 		}
 
@@ -154,7 +153,7 @@ func (db *Store) translate(result *samples.Samples) error {
 func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsTimestamp, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
@@ -164,7 +163,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
@@ -174,7 +173,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsLabels, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -184,7 +183,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsValue, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
@@ -198,7 +197,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 
 func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsLabels, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -213,7 +212,7 @@ func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Rec
 func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
@@ -223,7 +222,7 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsLabels, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsLabels, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -233,7 +232,7 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
+		root, ok := records.Get(rbf.Key{Column: MetricsValue, Shard: shard})
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}

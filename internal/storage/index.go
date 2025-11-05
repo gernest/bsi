@@ -4,7 +4,6 @@ import (
 	"math/bits"
 
 	"github.com/gernest/bsi/internal/bitmaps"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
 )
@@ -117,14 +116,14 @@ func (s *meta) Update(other *meta) {
 // AddIndex builds search index from tsid.Prometheus validates that label names are unique,
 // which allows us to treat each label name observed as a unique bitmap.
 //
-// We encode series id as BSI in (keys.MetricsLabels, each label name generates a unique bitmap
+// We encode series id as BSI in (MetricsLabels, each label name generates a unique bitmap
 // that stores the (column_id, label_value) tuple encoded BSI.
-func (s *data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
-	labels := s.get(keys.MetricsLabels)
+func (s *data) AddIndex(start uint64, values []tsid.ID, kinds []Kind) {
+	labels := s.get(MetricsLabels)
 	var hi uint64
 	id := start
 	for i := range values {
-		if kinds[i] == keys.None {
+		if kinds[i] == None {
 			continue
 		}
 		la := values[i]
@@ -142,15 +141,15 @@ func (s *data) AddIndex(start uint64, values []tsid.ID, kinds []keys.Kind) {
 
 }
 
-// AddTS encodes values as BSI in keys.MetricsTimestamp bitmap. Unlike prometheus
+// AddTS encodes values as BSI in MetricsTimestamp bitmap. Unlike prometheus
 // we never check for Out Of Order series because they are irrelevant, we always
 // sort by time when iterating over series samples.
-func (s *data) AddTS(start uint64, values []int64, kinds []keys.Kind) {
-	ra := s.get(keys.MetricsTimestamp)
+func (s *data) AddTS(start uint64, values []int64, kinds []Kind) {
+	ra := s.get(MetricsTimestamp)
 	var lo, hi int64
 	id := start
 	for i := range values {
-		if kinds[i] == keys.None {
+		if kinds[i] == None {
 			continue
 		}
 		if lo == 0 {
@@ -166,16 +165,16 @@ func (s *data) AddTS(start uint64, values []int64, kinds []keys.Kind) {
 	s.meta.depth.ts = uint8(bits.Len64(max(uint64(lo), uint64(hi)))) + 1
 }
 
-// AddValues builds keys.MetricsValue bitmap. Depending on metric kind value can
+// AddValues builds MetricsValue bitmap. Depending on metric kind value can
 // either be a float64 or a dense uint64.
 //
 // Float metrics will have values in the IEEE 754 binary representation.
-func (s *data) AddValues(start uint64, values []uint64, kinds []keys.Kind) {
-	ra := s.get(keys.MetricsValue)
+func (s *data) AddValues(start uint64, values []uint64, kinds []Kind) {
+	ra := s.get(MetricsValue)
 	var hi uint64
 	id := start
 	for i := range values {
-		if kinds[i] == keys.None {
+		if kinds[i] == None {
 			continue
 		}
 		hi = max(hi, values[i])
@@ -185,18 +184,18 @@ func (s *data) AddValues(start uint64, values []uint64, kinds []keys.Kind) {
 	s.meta.depth.value = uint8(bits.Len64(hi)) + 1
 }
 
-// AddKind builds keys.MetricsType bitmap. This tracks metric value types. keys.None
+// AddKind builds MetricsType bitmap. This tracks metric value types. None
 // values are ignored.
 //
-// keys.None occurs when we have mixed metadata rows , which resets the values to
-// keys.None to avoid leaking metadata into rbf storage, since all metadata lives
+// None occurs when we have mixed metadata rows , which resets the values to
+// None to avoid leaking metadata into rbf storage, since all metadata lives
 // in the txt database.
-func (s *data) AddKind(start uint64, values []keys.Kind) {
-	ra := s.get(keys.MetricsType)
-	var hi keys.Kind
+func (s *data) AddKind(start uint64, values []Kind) {
+	ra := s.get(MetricsType)
+	var hi Kind
 	id := start
 	for i := range values {
-		if values[i] == keys.None {
+		if values[i] == None {
 			continue
 		}
 		hi = max(hi, values[i])

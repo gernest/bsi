@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"github.com/gernest/bsi/internal/storage/buffer"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -24,10 +23,10 @@ type Rows struct {
 	Histogram [][]byte
 	Metadata  [][]byte
 	Exemplar  [][]byte
-	Kind      []keys.Kind
+	Kind      []Kind
 
 	none  int
-	flags keys.Kind
+	flags Kind
 }
 
 func (r *Rows) Size() int {
@@ -35,13 +34,13 @@ func (r *Rows) Size() int {
 }
 
 func (r *Rows) Delete(i int) {
-	r.Kind[i] = keys.None
+	r.Kind[i] = None
 	r.none++
 }
 
 // Has returns true if r has kind sample. It is a quick way to see if r needs to be
 // translated.
-func (r *Rows) Has(kind keys.Kind) bool {
+func (r *Rows) Has(kind Kind) bool {
 	return r.flags&kind == kind
 }
 
@@ -51,11 +50,11 @@ func (r *Rows) AppendFloat(la labels.Labels, ts int64, value float64) {
 	r.Timestamp = append(r.Timestamp, ts)
 	r.Value = append(r.Value, math.Float64bits(value))
 
-	r.Kind = append(r.Kind, keys.Float)
+	r.Kind = append(r.Kind, Float)
 	r.Histogram = append(r.Histogram, nil)
 	r.Metadata = append(r.Metadata, nil)
 	r.Exemplar = append(r.Exemplar, nil)
-	r.flags |= keys.Float
+	r.flags |= Float
 }
 
 // AppendHistogram stores histogram sample.
@@ -63,9 +62,9 @@ func (r *Rows) AppendHistogram(la labels.Labels, ts int64, value []byte, isFloat
 	r.Labels = append(r.Labels, bytes.Clone(buffer.UnwrapLabel(&la)))
 	r.Timestamp = append(r.Timestamp, ts)
 	r.Histogram = append(r.Histogram, value)
-	kind := keys.Histogram
+	kind := Histogram
 	if isFloat {
-		kind = keys.FloatHistogram
+		kind = FloatHistogram
 	}
 	r.Kind = append(r.Kind, kind)
 	r.Value = append(r.Value, 0)
@@ -80,11 +79,11 @@ func (r *Rows) AppendExemplar(la labels.Labels, ts int64, value []byte) {
 	r.Timestamp = append(r.Timestamp, ts)
 	r.Exemplar = append(r.Exemplar, value)
 
-	r.Kind = append(r.Kind, keys.Exemplar)
+	r.Kind = append(r.Kind, Exemplar)
 	r.Value = append(r.Value, 0)
 	r.Metadata = append(r.Metadata, nil)
 	r.Histogram = append(r.Histogram, nil)
-	r.flags |= keys.Exemplar
+	r.flags |= Exemplar
 }
 
 func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
@@ -92,11 +91,11 @@ func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
 	r.Timestamp = append(r.Timestamp, ts)
 	r.Metadata = append(r.Metadata, value)
 
-	r.Kind = append(r.Kind, keys.Metadata)
+	r.Kind = append(r.Kind, Metadata)
 	r.Value = append(r.Value, 0)
 	r.Histogram = append(r.Histogram, nil)
 	r.Exemplar = append(r.Exemplar, nil)
-	r.flags |= keys.Metadata
+	r.flags |= Metadata
 }
 
 // Reset resets r fields and retain capacity.

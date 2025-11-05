@@ -8,7 +8,6 @@ import (
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/prometheus/prometheus/model/labels"
@@ -112,7 +111,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 
 	for i := range vs.meta {
 		shard := uint64(vs.meta[i].shard)
-		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
+		tsP, ok := records.Get(rbf.Key{Column: MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
@@ -124,15 +123,15 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 			continue
 		}
 
-		kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+		kind, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 		if !ok {
 			panic("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Float), 0)
+		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Float), 0)
 		if err != nil {
 			return err
 		}
-		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Histogram), 0)
 		if err != nil {
 			return err
 		}

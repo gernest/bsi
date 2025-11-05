@@ -8,7 +8,6 @@ import (
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"go.etcd.io/bbolt"
 )
@@ -66,8 +65,8 @@ func (db *Store) applyRetentionPolicy() error {
 		maxHistogram uint64
 		maxExemplar  uint64
 	)
-	hsDepth := bits.Len64(uint64(keys.Histogram)) + 1
-	exeDepth := bits.Len64(uint64(keys.Exemplar)) + 1
+	hsDepth := bits.Len64(uint64(Histogram)) + 1
+	exeDepth := bits.Len64(uint64(Exemplar)) + 1
 
 	for i := range metadata {
 		if metadata[i].depth.kind >= uint8(exeDepth) {
@@ -158,15 +157,15 @@ func (db *Store) findMaxHistogram(shard uint64, depth uint8) (uint64, error) {
 		return 0, err
 	}
 
-	kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+	kind, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 	if !ok {
 		panic("missing metric type root records")
 	}
-	histogram, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(keys.Histogram), 0)
+	histogram, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(Histogram), 0)
 	if err != nil {
 		return 0, err
 	}
-	floatHistogram, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(keys.FloatHistogram), 0)
+	floatHistogram, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(FloatHistogram), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -174,7 +173,7 @@ func (db *Store) findMaxHistogram(shard uint64, depth uint8) (uint64, error) {
 	if !filter.Any() {
 		return 0, nil
 	}
-	value, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
+	value, ok := records.Get(rbf.Key{Column: MetricsValue, Shard: shard})
 	if !ok {
 		panic("missing metric value root records")
 	}
@@ -192,12 +191,12 @@ func (db *Store) findMaxExemplar(shard uint64, depth uint8) (uint64, error) {
 		return 0, err
 	}
 
-	kind, ok := records.Get(rbf.Key{Column: keys.MetricsType, Shard: shard})
+	kind, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 	if !ok {
 		panic("missing metric type root records")
 	}
 
-	exe, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(keys.Exemplar), 0)
+	exe, err := readBSIRange(tx, kind, shard, depth, bitmaps.EQ, int64(Exemplar), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -205,7 +204,7 @@ func (db *Store) findMaxExemplar(shard uint64, depth uint8) (uint64, error) {
 		return 0, nil
 	}
 
-	value, ok := records.Get(rbf.Key{Column: keys.MetricsValue, Shard: shard})
+	value, ok := records.Get(rbf.Key{Column: MetricsValue, Shard: shard})
 	if !ok {
 		panic("missing metric value root records")
 	}

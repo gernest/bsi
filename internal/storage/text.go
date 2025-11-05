@@ -9,7 +9,6 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/storage/buffer"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
@@ -125,19 +124,19 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 			}
 		}
 
-		if r.Has(keys.Histogram) || r.Has(keys.FloatHistogram) {
+		if r.Has(Histogram) || r.Has(FloatHistogram) {
 			err = txt2u64(tx.Bucket(histogramData), r.Value, r.Histogram)
 			if err != nil {
 				return err
 			}
 		}
-		if r.Has(keys.Exemplar) {
+		if r.Has(Exemplar) {
 			err = txt2u64(tx.Bucket(exemplarData), r.Value, r.Exemplar)
 			if err != nil {
 				return err
 			}
 		}
-		if r.Has(keys.Metadata) {
+		if r.Has(Metadata) {
 			metaB := tx.Bucket(metaData)
 
 			// Unlike other sample types, we only need to store mapping between metric name
@@ -146,7 +145,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 			var lastMeta, lastLabels []byte
 
 			for i := range r.Metadata {
-				if r.Kind[i] != keys.Metadata {
+				if r.Kind[i] != Metadata {
 					continue
 				}
 				if i != 0 && bytes.Equal(lastLabels, r.Labels[i]) && bytes.Equal(lastMeta, r.Metadata[i]) {

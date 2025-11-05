@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/gernest/bsi/internal/storage/buffer"
-	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/raw"
 	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -226,12 +225,12 @@ func (i *Iter) Next() chunkenc.ValueType {
 	if !ok {
 		panic(fmt.Sprintf("missing metric type at %d", i.ts.ID[i.idx]))
 	}
-	switch keys.Kind(kind) {
-	case keys.Float:
+	switch kind {
+	case 1:
 		i.typ = chunkenc.ValFloat
-	case keys.Histogram:
+	case 2:
 		i.typ = chunkenc.ValHistogram
-	case keys.FloatHistogram:
+	case 3:
 		i.typ = chunkenc.ValFloatHistogram
 	default:
 		panic(fmt.Sprintf("unknown metric type %d", kind))
