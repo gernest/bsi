@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync/atomic"
 
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/seq"
+	"github.com/gernest/bsi/internal/storage/single"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
@@ -24,10 +24,11 @@ var tsidPool tsid.Pool
 
 // Store implements timeseries database.
 type Store struct {
-	rbf *rbf.DB
+	rbf single.Group[yyyyMM, *rbf.DB, string]
 	txt *bbolt.DB
 	lo  *slog.Logger
 
+	dataPath  string
 	retention atomic.Int64
 	deletion  atomic.Uint64
 }
@@ -41,11 +42,7 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
 	}
-	db.rbf = rbf.NewDB(dataPath, nil)
-	err = db.rbf.Open()
-	if err != nil {
-		return err
-	}
+
 	tdb, err := bbolt.Open(filepath.Join(dataPath, "txt"), 0600, nil)
 	if err != nil {
 		return err
@@ -83,9 +80,18 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 		return nil
 	})
 
+	db.rbf.Init(func(ym yyyyMM, s string) (*rbf.DB, error) {
+		path := filepath.Join(s, ym.String())
+		da := rbf.NewDB(path, nil)
+		err := da.Open()
+		if err != nil {
+			return nil, fmt.Errorf("opening rbf database %w", err)
+		}
+		return da, nil
+	})
+	db.dataPath = dataPath
 	db.txt = tdb
 	db.lo = lo
-
 	return nil
 }
 
@@ -137,18 +143,27 @@ func (db *Store) AddRows(rows *Rows) error {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
 
-	ma := make(batch)
+	ma := make(partitions)
 
 	lo := hi - uint64(rows.Size())
 
 	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
 		shard := se.Lo / shardwidth.ShardWidth
 		offset := start + int(se.Hi-se.Lo) - 1
-		sx := ma.Get(shard)
-		sx.AddTS(se.Lo, rows.Timestamp[start:offset], rows.Kind)
-		sx.AddValues(se.Lo, rows.Value[start:offset], rows.Kind)
-		sx.AddKind(se.Lo, rows.Kind[start:offset])
-		sx.AddIndex(se.Lo, ids.B[start:offset], rows.Kind)
+
+		for i := range offset - start {
+			if rows.Kind[i] == None {
+				continue
+			}
+			idx := start + i
+			id := se.Lo + uint64(idx)
+			ba := ma.get(shard, rows.Timestamp[idx])
+			ba.Timestamp(id, rows.Timestamp[idx])
+			ba.Value(id, rows.Value[idx])
+			ba.Kind(id, rows.Kind[idx])
+			ba.Index(id, ids.B[idx])
+		}
+
 	}
 
 	err = db.apply(ma)
@@ -166,47 +181,49 @@ func (db *Store) AddRows(rows *Rows) error {
 	return nil
 }
 
-func (db *Store) saveMetadata(ma batch) error {
+func (db *Store) saveMetadata(ma partitions) error {
 	var key [8]byte
 	return db.txt.Update(func(tx *bbolt.Tx) error {
 		adminB := tx.Bucket(admin)
-		cu := adminB.Cursor()
-		var first meta
-		if _, v := cu.First(); v != nil {
-			first = magic.ReinterpretSlice[meta](v)[0]
-		}
-		shards := make([]uint64, 0, len(ma))
-		for k := range ma {
-			shards = append(shards, k)
-		}
-		slices.Sort(shards)
-
-		retention := db.retention.Load()
-
-		for _, shard := range shards {
-			data := ma[shard]
-			binary.BigEndian.PutUint64(key[:], shard)
-			if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
-				data.meta.Update(&magic.ReinterpretSlice[meta](v)[0])
-			}
-
-			err := adminB.Put(key[:], magic.ReinterpretSlice[byte]([]meta{data.meta}))
+		for k, v := range ma {
+			pa, err := adminB.CreateBucketIfNotExists([]byte(k.String()))
 			if err != nil {
-				return fmt.Errorf("updating shard data %w", err)
+				return fmt.Errorf("getting partition=%v %w", k, err)
 			}
-
-			if retention != 0 && db.deletion.Load() == 0 && (data.meta.max-first.max) >= retention {
-				db.deletion.Store(shard)
+			cu := pa.Cursor()
+			for shard, data := range v {
+				binary.BigEndian.PutUint64(key[:], shard)
+				if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
+					data.meta.Update(&magic.ReinterpretSlice[meta](v)[0])
+				}
+				err := pa.Put(key[:], magic.ReinterpretSlice[byte]([]meta{data.meta}))
+				if err != nil {
+					return fmt.Errorf("updating shard=%d view=%s data %w", shard, k, err)
+				}
 			}
 		}
-
 		return nil
 	})
 }
 
-func (db *Store) apply(ma batch) error {
+func (db *Store) apply(ma partitions) error {
+	for k, v := range ma {
+		err := db.applyPartition(k, v)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	tx, err := db.rbf.Begin(true)
+func (db *Store) applyPartition(ym yyyyMM, ma batch) error {
+	da, done, err := db.rbf.Do(ym, db.dataPath)
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	tx, err := da.Begin(true)
 	if err != nil {
 		return fmt.Errorf("creating write transaction %w", err)
 	}
@@ -222,4 +239,20 @@ func (db *Store) apply(ma batch) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (db *Store) partition(key yyyyMM, writable bool, cb func(tx *rbf.Tx) error) error {
+	da, done, err := db.rbf.Do(key, db.dataPath)
+	if err != nil {
+		return err
+	}
+	defer done.Close()
+
+	tx, err := da.Begin(writable)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	return cb(tx)
 }

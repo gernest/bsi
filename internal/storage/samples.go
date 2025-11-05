@@ -44,45 +44,34 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 }
 
 func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) error {
-	tx, err := db.rbf.Begin(false)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	records, err := tx.RootRecords()
-	if err != nil {
-		return err
-	}
-
-	for i := range vs.meta {
-		shard := uint64(vs.meta[i].shard)
+	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
+		shard := m.shard
 		tsP, ok := records.Get(rbf.Key{Column: MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, vs.meta[i].depth.ts, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, m.depth.ts, bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
 		if !ra.Any() {
-			continue
+			return nil
 		}
 
 		kind, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
 		if !ok {
 			panic("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Float), 0)
+		float, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Float), 0)
 		if err != nil {
 			return err
 		}
 
-		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Histogram), 0)
 		if err != nil {
 			return err
 		}
-		floatHistogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(FloatHistogram), 0)
+		floatHistogram, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(FloatHistogram), 0)
 		if err != nil {
 			return err
 		}
@@ -90,7 +79,7 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 		// metric samples can either be histograms or floats.
 		ra = ra.Intersect(float.Union(histogram.Union(floatHistogram)))
 		if !ra.Any() {
-			continue
+			return nil
 		}
 
 		ra, err = applyBSIFilters(tx, records, shard, ra, vs.match)
@@ -98,16 +87,12 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			return fmt.Errorf("applying filters %w", err)
 		}
 
-		err = readSamples(result, vs.meta[i], tx, records, shard, ra)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+		return readSamples(result, m, tx, records, shard, ra)
+
+	})
 }
 
 func (db *Store) translate(result *samples.Samples) error {
-
 	readData := func(tx *bbolt.Tx, bucket []byte, values *roaring.Bitmap) {
 		bu := tx.Bucket(bucket)
 		readFromU64(bu, values, func(id uint64, value []byte) error {

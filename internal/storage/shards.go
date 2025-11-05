@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"sort"
 
 	"github.com/cespare/xxhash/v2"
@@ -20,12 +21,9 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 	vs = shardsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
-		cu := tx.Bucket(admin).Cursor()
-		for _, v := cu.First(); v != nil; _, v = cu.Next() {
-			o := magic.ReinterpretSlice[meta](v)
-			if o[0].InRange(start, end) {
-				vs.meta = append(vs.meta, o[0])
-			}
+		err := findPartitions(tx, start, end, vs)
+		if err != nil {
+			return err
 		}
 		if len(vs.meta) == 0 {
 			return nil
@@ -146,12 +144,9 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 	vs = shardsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
-		cu := tx.Bucket(admin).Cursor()
-		for _, v := cu.First(); v != nil; _, v = cu.Next() {
-			o := magic.ReinterpretSlice[meta](v)
-			if o[0].InRange(start, end) {
-				vs.meta = append(vs.meta, o[0])
-			}
+		err := findPartitions(tx, start, end, vs)
+		if err != nil {
+			return err
 		}
 		if len(vs.meta) == 0 {
 			return nil
@@ -272,4 +267,36 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 		shardsPool.Put(vs)
 	}
 	return
+}
+
+func findPartitions(tx *bbolt.Tx, start, end int64, vs *view) error {
+	adminB := tx.Bucket(admin)
+	acu := adminB.Cursor()
+	lo := []byte(partitionKey(start).String())
+	hi := []byte(partitionKey(end).String())
+
+	// Top level buckets are for partitions
+	for name, value := acu.Seek(lo); name != nil && value == nil && bytes.Compare(name, hi) < 1; name, value = acu.Next() {
+
+		key, err := parsePartitionKey(magic.String(name))
+		if err != nil {
+			return fmt.Errorf("parsing partition %w", err)
+		}
+		var all []meta
+		cu := adminB.Bucket(name).Cursor()
+
+		for _, v := cu.First(); v != nil; _, v = cu.Next() {
+			o := magic.ReinterpretSlice[meta](v)
+			if o[0].InRange(start, end) {
+				all = append(all, o...)
+			}
+		}
+		if len(all) > 0 {
+			vs.partition = append(vs.partition, key)
+			vs.meta = append(vs.meta, all)
+		}
+
+	}
+	return nil
+
 }

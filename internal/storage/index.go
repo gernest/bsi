@@ -1,9 +1,14 @@
 package storage
 
 import (
+	"fmt"
 	"math/bits"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
 )
@@ -22,7 +27,8 @@ var _ PooledItem[*view] = (*viewsItems)(nil)
 // All data for view is read from txt database. Think of this as a guideline on
 // what to read from rbf storage.
 type view struct {
-	meta []meta
+	partition []yyyyMM
+	meta      [][]meta
 	// when provided  applies an intersection of all match
 	match []match
 	// when provided applies a union of intersecting []match.
@@ -59,6 +65,51 @@ func (v *view) Reset() *view {
 // batch builds rbf containers in memory to allow much faster batch ingestion via
 // (*rbf.Tx)AddRoaring call. We automatically organize bitmaps in shards.
 type batch map[uint64]*data
+
+type yyyyMM struct {
+	year  int
+	month time.Month
+}
+
+func partitionKey(t int64) yyyyMM {
+	yy, mm, _ := time.UnixMilli(t).Date()
+	return yyyyMM{year: yy, month: mm}
+}
+
+func parsePartitionKey(k string) (yyyyMM, error) {
+	y, m, ok := strings.Cut(k, "_")
+	if !ok {
+		return yyyyMM{}, fmt.Errorf("invalid partition key")
+	}
+	yy, err := strconv.Atoi(y)
+	if err != nil {
+		return yyyyMM{}, fmt.Errorf("invalid partition year %w", err)
+	}
+	mm, err := strconv.Atoi(m)
+	if err != nil {
+		return yyyyMM{}, fmt.Errorf("invalid partition month %w", err)
+	}
+	return yyyyMM{year: yy, month: time.Month(mm)}, nil
+}
+
+func (y yyyyMM) String() string {
+	return fmt.Sprintf("%04d_%02d", y.year, y.month)
+}
+
+type partitions map[yyyyMM]batch
+
+func (pa partitions) get(shard uint64, ts int64) *data {
+	yy, mm, _ := time.UnixMilli(ts).Date()
+	key := yyyyMM{
+		year: yy, month: mm,
+	}
+	ba, ok := pa[key]
+	if !ok {
+		ba = make(batch)
+		pa[key] = ba
+	}
+	return ba.Get(shard)
+}
 
 func (s batch) Get(shard uint64) *data {
 	r, ok := s[shard]
@@ -141,68 +192,40 @@ func (s *data) AddIndex(start uint64, values []tsid.ID, kinds []Kind) {
 
 }
 
-// AddTS encodes values as BSI in MetricsTimestamp bitmap. Unlike prometheus
-// we never check for Out Of Order series because they are irrelevant, we always
-// sort by time when iterating over series samples.
-func (s *data) AddTS(start uint64, values []int64, kinds []Kind) {
+func (s *data) Index(id uint64, value tsid.ID) {
+	bitmaps.BSI(s.get(MetricsLabels), id, int64(value[0].Value))
+	for i := 1; i < len(value); i++ {
+		bitmaps.BSI(s.get(value[i].ID), id, int64(value[i].Value))
+	}
+	depth := uint8(bits.Len64(uint64(value[0].Value))) + 1
+	s.meta.depth.label = max(s.meta.depth.ts, depth)
+}
+
+func (s *data) Timestamp(id uint64, value int64) {
 	ra := s.get(MetricsTimestamp)
-	var lo, hi int64
-	id := start
-	for i := range values {
-		if kinds[i] == None {
-			continue
-		}
-		if lo == 0 {
-			lo = values[i]
-		}
-		lo = min(lo, values[i])
-		hi = max(hi, values[i])
-		bitmaps.BSI(ra, id, values[i])
-		id++
+	bitmaps.BSI(ra, id, value)
+	if s.meta.min == 0 {
+		s.meta.min = value
+	} else {
+		s.meta.min = min(s.meta.min, value)
 	}
-	s.meta.min = lo
-	s.meta.max = hi
-	s.meta.depth.ts = uint8(bits.Len64(max(uint64(lo), uint64(hi)))) + 1
+	s.meta.max = max(s.meta.max, value)
+	depth := uint8(bits.Len64(uint64(value))) + 1
+	s.meta.depth.ts = max(s.meta.depth.ts, depth)
 }
 
-// AddValues builds MetricsValue bitmap. Depending on metric kind value can
-// either be a float64 or a dense uint64.
-//
-// Float metrics will have values in the IEEE 754 binary representation.
-func (s *data) AddValues(start uint64, values []uint64, kinds []Kind) {
+func (s *data) Value(id uint64, value uint64) {
 	ra := s.get(MetricsValue)
-	var hi uint64
-	id := start
-	for i := range values {
-		if kinds[i] == None {
-			continue
-		}
-		hi = max(hi, values[i])
-		bitmaps.BSI(ra, id, int64(values[i]))
-		id++
-	}
-	s.meta.depth.value = uint8(bits.Len64(hi)) + 1
+	bitmaps.BSI(ra, id, int64(value))
+	depth := uint8(bits.Len64(uint64(value))) + 1
+	s.meta.depth.value = max(s.meta.depth.ts, depth)
 }
 
-// AddKind builds MetricsType bitmap. This tracks metric value types. None
-// values are ignored.
-//
-// None occurs when we have mixed metadata rows , which resets the values to
-// None to avoid leaking metadata into rbf storage, since all metadata lives
-// in the txt database.
-func (s *data) AddKind(start uint64, values []Kind) {
+func (s *data) Kind(id uint64, value Kind) {
 	ra := s.get(MetricsType)
-	var hi Kind
-	id := start
-	for i := range values {
-		if values[i] == None {
-			continue
-		}
-		hi = max(hi, values[i])
-		bitmaps.BSI(ra, id, int64(values[i]))
-		id++
-	}
-	s.meta.depth.kind = uint8(bits.Len64(uint64(hi))) + 1
+	bitmaps.BSI(ra, id, int64(value))
+	depth := uint8(bits.Len64(uint64(value))) + 1
+	s.meta.depth.kind = max(s.meta.depth.ts, depth)
 }
 
 func (s *data) get(col uint64) *roaring.Bitmap {
@@ -212,4 +235,26 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 		s.columns[col] = r
 	}
 	return r
+}
+
+func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
+	for i := range vs.partition {
+		err := db.partition(vs.partition[i], false, func(tx *rbf.Tx) error {
+			records, err := tx.RootRecords()
+			if err != nil {
+				return err
+			}
+			for _, m := range vs.meta[i] {
+				err := cb(tx, records, m)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
