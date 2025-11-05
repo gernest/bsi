@@ -43,9 +43,9 @@ func TestDB_WAL(t *testing.T) {
 		tx := MustBegin(t, db, true)
 		defer tx.Rollback()
 
-		if err := tx.CreateBitmap(rbf.Key{Shard: 1}); err != nil {
+		if err := tx.CreateBitmap(1); err != nil {
 			t.Fatal(err)
-		} else if err := tx.CreateBitmap(rbf.Key{Shard: 2}); err != rbf.ErrTxTooLarge {
+		} else if err := tx.CreateBitmap(2); err != rbf.ErrTxTooLarge {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -60,13 +60,13 @@ func TestDB_WAL(t *testing.T) {
 		tx := MustBegin(t, db, true)
 		defer tx.Rollback()
 
-		if err := tx.CreateBitmap(rbf.Key{Shard: 1}); err != nil {
+		if err := tx.CreateBitmap(1); err != nil {
 			t.Fatal(err)
 		}
 
 		// Fill array until it has the maximum number of elements.
 		for i := uint64(0); i < rbf.ArrayMaxSize; i++ {
-			if _, err := tx.Add(rbf.Key{Shard: 1}, i); err != nil {
+			if _, err := tx.Add(1, i); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -74,7 +74,7 @@ func TestDB_WAL(t *testing.T) {
 		// Issuing one more item to a full array should convert it to a bitmap
 		// page and cause the write to return "tx too large". Previous to the
 		// FB-828 fix, this would write past the mmap size so it was inaccessible.
-		if _, err := tx.Add(rbf.Key{Shard: 1}, rbf.ArrayMaxSize); err == nil || !errors.Is(err, rbf.ErrTxTooLarge) {
+		if _, err := tx.Add(1, rbf.ArrayMaxSize); err == nil || !errors.Is(err, rbf.ErrTxTooLarge) {
 			t.Fatalf("unexpected error: %#v", err)
 		}
 	})
@@ -126,9 +126,9 @@ func TestDB_WAL(t *testing.T) {
 				tx := MustBegin(t, db, true)
 				defer tx.Rollback()
 
-				if err := tx.CreateBitmapIfNotExists(rbf.Key{Shard: 1}); err != nil {
+				if err := tx.CreateBitmapIfNotExists(1); err != nil {
 					t.Fatal(err)
-				} else if _, err := tx.Add(rbf.Key{Shard: 1}, uint64(i)); err != nil {
+				} else if _, err := tx.Add(1, uint64(i)); err != nil {
 					t.Fatal(err)
 				} else if err := tx.Commit(); err != nil {
 					t.Fatal(err)
@@ -177,7 +177,7 @@ func TestDB_WAL(t *testing.T) {
 						// give the db time to close between when we opened and
 						// when we run the Container call
 						time.Sleep(10 * time.Millisecond)
-						_, err = tx.Container(rbf.Key{Shard: 1}, 0)
+						_, err = tx.Container(1, 0)
 						if err != nil {
 							t.Fatalf("requesting container: %v", err)
 						}
@@ -202,9 +202,9 @@ func TestDB_WAL(t *testing.T) {
 				tx := MustBegin(t, db, true)
 				defer tx.Rollback()
 
-				if err := tx.CreateBitmapIfNotExists(rbf.Key{Shard: 1}); err != nil {
+				if err := tx.CreateBitmapIfNotExists(1); err != nil {
 					t.Fatal(err)
-				} else if _, err := tx.Add(rbf.Key{Shard: 1}, uint64(i)); err != nil {
+				} else if _, err := tx.Add(1, uint64(i)); err != nil {
 					t.Fatal(err)
 				} else if err := tx.Commit(); err != nil {
 					t.Fatal(err)
@@ -242,9 +242,9 @@ func TestDB_Recovery(t *testing.T) {
 		// Create bitmap & generate enough values to create a bitmap container.
 		if tx, err := db.Begin(true); err != nil {
 			t.Fatal(err)
-		} else if err := tx.CreateBitmap(rbf.Key{Shard: 1}); err != nil {
+		} else if err := tx.CreateBitmap(1); err != nil {
 			t.Fatal(err)
-		} else if _, err := tx.Add(rbf.Key{Shard: 1}, a...); err != nil {
+		} else if _, err := tx.Add(1, a...); err != nil {
 			t.Fatal(err)
 		} else if err := tx.Commit(); err != nil {
 			t.Fatal(err)
@@ -254,7 +254,7 @@ func TestDB_Recovery(t *testing.T) {
 		tx0, err := db.Begin(true)
 		if err != nil {
 			t.Fatal(err)
-		} else if _, err := tx0.Add(rbf.Key{Shard: 1}, uint64(len(a))); err != nil {
+		} else if _, err := tx0.Add(1, uint64(len(a))); err != nil {
 			t.Fatal(err)
 		}
 
@@ -292,9 +292,9 @@ func TestDB_Recovery(t *testing.T) {
 		}
 		defer tx.Rollback()
 
-		if exists, err := tx.Contains(rbf.Key{Shard: 1}, uint64(len(a))); exists || err != nil {
+		if exists, err := tx.Contains(1, uint64(len(a))); exists || err != nil {
 			t.Fatalf("Contains()=<%v,%#v>", exists, err)
-		} else if exists, err := tx.Contains(rbf.Key{Shard: 1}, uint64(len(a)-1)); !exists || err != nil {
+		} else if exists, err := tx.Contains(1, uint64(len(a)-1)); !exists || err != nil {
 			t.Fatalf("Contains()=<%v,%#v>", exists, err)
 		}
 		tx.Rollback()
@@ -329,7 +329,7 @@ func TestDB_HasData(t *testing.T) {
 	// Create bitmap with no hot bits.
 	if tx, err := db.Begin(true); err != nil {
 		t.Fatal(err)
-	} else if err := tx.CreateBitmap(rbf.Key{Shard: 1}); err != nil {
+	} else if err := tx.CreateBitmap(1); err != nil {
 		t.Fatal(err)
 	} else if err := tx.Commit(); err != nil {
 		t.Fatal(err)
@@ -357,7 +357,7 @@ func TestDB_HasData(t *testing.T) {
 	// hot up a bit.
 	if tx, err := db.Begin(true); err != nil {
 		t.Fatal(err)
-	} else if _, err := tx.Add(rbf.Key{Shard: 1}, rand.Uint64()); err != nil {
+	} else if _, err := tx.Add(1, rand.Uint64()); err != nil {
 		t.Fatal(err)
 	} else if err := tx.Commit(); err != nil {
 		t.Fatal(err)
@@ -411,7 +411,7 @@ func TestDB_MultiTx(t *testing.T) {
 					n := rand.Intn(500) + 500
 					for i := 0; i < n; i++ {
 						v := rand.Intn(1 << 20)
-						if _, err := tx.Contains(rbf.Key{Shard: 1}, uint64(v)); err != nil {
+						if _, err := tx.Contains(1, uint64(v)); err != nil {
 							return err
 						}
 					}
@@ -437,7 +437,7 @@ func TestDB_MultiTx(t *testing.T) {
 			n := rand.Intn(90) + 10
 			for j := 0; j < n; j++ {
 				v := rand.Intn(1 << 20)
-				if _, err := tx.Add(rbf.Key{Shard: 1}, uint64(v)); err != nil {
+				if _, err := tx.Add(1, uint64(v)); err != nil {
 					t.Fatal(err)
 				}
 
@@ -505,7 +505,7 @@ func benchmarkOneCheckpoint(b *testing.B, randInts []int) {
 					times := rand.Intn(1000) + 1
 					for j := 0; j < times; j++ {
 						v := randInts[((i<<10)+j)%(randPool-1)]
-						if _, err := tx.Contains(rbf.Key{Shard: 1}, uint64(v)); err != nil {
+						if _, err := tx.Contains(1, uint64(v)); err != nil {
 							return err
 						}
 					}
@@ -534,11 +534,11 @@ func benchmarkOneCheckpoint(b *testing.B, randInts []int) {
 				next = (next + 1) % (randPool - 1)
 				if j&7 == 0 {
 					// some removes but they're less frequent
-					if _, err := tx.Remove(rbf.Key{Shard: 1}, uint64(v)); err != nil {
+					if _, err := tx.Remove(1, uint64(v)); err != nil {
 						b.Fatal(err)
 					}
 				} else {
-					if _, err := tx.Add(rbf.Key{Shard: 1}, uint64(v)); err != nil {
+					if _, err := tx.Add(1, uint64(v)); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -609,7 +609,7 @@ func TestDB_Backup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = tx.Add(rbf.Key{Shard: 1}, 1, 2, 3)
+	_, err = tx.Add(1, 1, 2, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +642,7 @@ func TestDB_Backup(t *testing.T) {
 	}
 	defer tx.Rollback()
 
-	r, err := tx.RoaringBitmap(rbf.Key{Shard: 1})
+	r, err := tx.RoaringBitmap(1)
 	if err != nil {
 		t.Fatal(err)
 	}

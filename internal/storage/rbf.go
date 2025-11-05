@@ -74,7 +74,7 @@ func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roa
 }
 
 func readBSIFilter(tx *rbf.Tx, records *rbf.Records, shard uint64, match *match) (*roaring.Bitmap, error) {
-	root, ok := records.Get(rbf.Key{Column: match.column, Shard: shard})
+	root, ok := records.Get(match.column)
 	if !ok {
 		return nil, fmt.Errorf("missing root record for column %d", match.column)
 	}

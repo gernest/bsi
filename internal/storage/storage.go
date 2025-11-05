@@ -221,7 +221,7 @@ func (db *Store) applyPartition(ym yyyyMM, ma batch) error {
 		err := db.partition(ym, shard, true, func(tx *rbf.Tx) error {
 			for col, ra := range v.columns {
 				ra.Optimize()
-				_, err := tx.AddRoaring(rbf.Key{Column: col, Shard: shard}, ra)
+				_, err := tx.AddRoaring(col, ra)
 				if err != nil {
 					return fmt.Errorf("writing bitmap %w", err)
 				}

@@ -16,33 +16,15 @@ const recordSize = int(unsafe.Sizeof(Record{}))
 // Records holds immutable mapping of bitmap keys to root page number.
 type Records = immutable.SortedMap[Key, uint32]
 
-type Key struct {
-	Column uint64
-	Shard  uint64
-}
-
-func (k Key) String() string {
-	return fmt.Sprintf("%x_%d", k.Column, k.Shard)
-}
-
-var zero Key
-
-// IsEmpty returns true if key is zero.
-func (k Key) IsEmpty() bool {
-	return k == zero
-}
+type Key = uint64
 
 type Record struct {
 	Column uint64
-	Shard  uint64
 	Page   uint32
 }
 
 func (r *Record) Key() Key {
-	return Key{
-		Column: r.Column,
-		Shard:  r.Shard,
-	}
+	return r.Column
 }
 
 var zeroRecord Record
@@ -74,47 +56,7 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := cmp.Compare(a.Shard, b.Shard)
-	if i != 0 {
-		return i
-	}
-	return cmp.Compare(a.Column, b.Column)
-}
-
-func (tx *Tx) DeleteShard(shard uint64) error {
-
-	tx.mu.Lock()
-	defer tx.mu.Unlock()
-
-	if tx.db == nil {
-		return ErrTxClosed
-	} else if !tx.writable {
-		return ErrTxNotWritable
-	}
-
-	// Read list of root records.
-	records, err := tx.RootRecords()
-	if err != nil {
-		return err
-	}
-	it := records.Iterator()
-	it.Seek(Key{Shard: shard})
-
-	for {
-		name, page, ok := it.Next()
-		if !ok || name.Shard != shard {
-			break
-		}
-		if err := tx.deallocateTree(page); err != nil {
-			return err
-		}
-		records = records.Delete(name)
-	}
-	if err := tx.writeRootRecordPages(records); err != nil {
-		return fmt.Errorf("write bitmaps root records %w", err)
-	}
-	tx.rootRecords = records
-	return nil
+	return cmp.Compare(a, b)
 }
 
 type Size struct {

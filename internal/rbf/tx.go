@@ -259,7 +259,7 @@ func (tx *Tx) BitmapExists(name Key) (bool, error) {
 func (tx *Tx) bitmapExists(name Key) (bool, error) {
 	if tx.db == nil {
 		return false, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return false, ErrBitmapNameRequired
 	}
 
@@ -285,7 +285,7 @@ func (tx *Tx) createBitmap(name Key) error {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return ErrBitmapNameRequired
 	}
 
@@ -350,7 +350,7 @@ func (tx *Tx) DeleteBitmap(name Key) error {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return ErrBitmapNameRequired
 	}
 
@@ -390,7 +390,7 @@ func (tx *Tx) RenameBitmap(oldname, newname Key) error {
 		return ErrTxClosed
 	} else if !tx.writable {
 		return ErrTxNotWritable
-	} else if oldname.IsEmpty() || newname.IsEmpty() {
+	} else if oldname == 0 || newname == 0 {
 		return ErrBitmapNameRequired
 	}
 
@@ -514,7 +514,7 @@ func (tx *Tx) Add(name Key, a ...uint64) (changeCount int, err error) {
 		return 0, ErrTxClosed
 	} else if !tx.writable {
 		return 0, ErrTxNotWritable
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -547,7 +547,7 @@ func (tx *Tx) Remove(name Key, a ...uint64) (changeCount int, err error) {
 		return 0, ErrTxClosed
 	} else if !tx.writable {
 		return 0, ErrTxNotWritable
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -576,7 +576,7 @@ func (tx *Tx) Contains(name Key, v uint64) (bool, error) {
 
 	if tx.db == nil {
 		return false, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return false, ErrBitmapNameRequired
 	}
 
@@ -598,7 +598,7 @@ func (tx *Tx) Depth(name Key) (int, error) {
 
 	if tx.db == nil {
 		return 0, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return 0, ErrBitmapNameRequired
 	}
 
@@ -626,7 +626,7 @@ func (tx *Tx) Cursor(name Key) (*Cursor, error) {
 func (tx *Tx) cursor(name Key) (*Cursor, error) {
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -659,7 +659,7 @@ func (tx *Tx) RoaringBitmap(name Key) (*roaring.Bitmap, error) {
 
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -705,7 +705,7 @@ func (tx *Tx) Container(name Key, key uint64) (*roaring.Container, error) {
 func (tx *Tx) container(name Key, key uint64) (*roaring.Container, error) {
 	if tx.db == nil {
 		return nil, ErrTxClosed
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		return nil, ErrBitmapNameRequired
 	}
 
@@ -1572,7 +1572,7 @@ func (tx *Tx) ImportRoaringBits(name Key, itr roaring.RoaringIterator, clear boo
 	} else if !tx.writable {
 		err = ErrTxNotWritable
 		return
-	} else if name.IsEmpty() {
+	} else if name == 0 {
 		err = ErrBitmapNameRequired
 		return
 	}
@@ -1881,7 +1881,7 @@ func (tx *Tx) PageInfos() ([]PageInfo, error) {
 	}
 
 	// Traverse freelist and mark pages as in-use.
-	if err := tx.walkPageInfo(infos, metaInfo.FreelistPageNo, Key{}); err != nil {
+	if err := tx.walkPageInfo(infos, metaInfo.FreelistPageNo, 0); err != nil {
 		errorList.Append(err)
 	}
 
