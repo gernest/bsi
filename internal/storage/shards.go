@@ -8,24 +8,22 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )
 
-var shardsPool views.Pool
+var shardsPool = pool[*view]{init: viewsItems{}}
 
 // Search for all shards that have timestamps within the start and end range. To avoid opeting
 // another database transaction, we also decode matchers for searching in our RBF storage.
-func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *views.List, err error) {
+func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *view, err error) {
 	vs = shardsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		cu := tx.Bucket(admin).Cursor()
-		for k, v := cu.First(); v != nil; k, v = cu.Next() {
-			o := magic.ReinterpretSlice[views.Meta](v)
+		for _, v := cu.First(); v != nil; _, v = cu.Next() {
+			o := magic.ReinterpretSlice[meta](v)
 			if o[0].InRange(start, end) {
-				vs.Shards = append(vs.Shards, binary.BigEndian.Uint64(k))
 				vs.Meta = append(vs.Meta, o[0])
 			}
 		}
@@ -52,9 +50,9 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						return nil
 					}
 					va := binary.BigEndian.Uint64(value)
-					vs.Search = append(vs.Search, views.Search{
+					vs.Search = append(vs.Search, Search{
 						Column: xxhash.Sum64(b),
-						Values: []views.Value{
+						Values: []Value{
 							{Predicate: int64(va)},
 						},
 						OP: bitmaps.EQ,
@@ -70,9 +68,9 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						continue
 					}
 					va := binary.BigEndian.Uint64(value)
-					vs.Search = append(vs.Search, views.Search{
+					vs.Search = append(vs.Search, Search{
 						Column: xxhash.Sum64(b),
-						Values: []views.Value{
+						Values: []Value{
 							{Predicate: int64(va)},
 						},
 						OP: bitmaps.NEQ,
@@ -86,13 +84,13 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						return nil
 					}
 					mb := searchB.Bucket(b)
-					values := make([]views.Value, 0, 64)
+					values := make([]Value, 0, 64)
 
 					mc := mb.Cursor()
 					prefix := magic.Slice(m.Prefix())
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
 						va := binary.BigEndian.Uint64(b)
-						values = append(values, views.Value{Predicate: int64(va)})
+						values = append(values, Value{Predicate: int64(va)})
 					}
 					if len(values) == 0 {
 						vs.Reset()
@@ -101,7 +99,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					sort.Slice(values, func(i, j int) bool {
 						return values[i].Predicate < values[j].Predicate
 					})
-					vs.Search = append(vs.Search, views.Search{
+					vs.Search = append(vs.Search, Search{
 						Column: xxhash.Sum64(b),
 						Values: values,
 						OP:     bitmaps.EQ,
@@ -113,13 +111,13 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						continue
 					}
 					mb := searchB.Bucket(b)
-					values := make([]views.Value, 0, 64)
+					values := make([]Value, 0, 64)
 
 					mc := mb.Cursor()
 					prefix := magic.Slice(m.Prefix())
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && !m.Matches(magic.String(a)); a, b = mc.Next() {
 						va := binary.BigEndian.Uint64(b)
-						values = append(values, views.Value{Predicate: int64(va)})
+						values = append(values, Value{Predicate: int64(va)})
 					}
 					if len(values) == 0 {
 						continue
@@ -127,7 +125,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					sort.Slice(values, func(i, j int) bool {
 						return values[i].Predicate < values[j].Predicate
 					})
-					vs.Search = append(vs.Search, views.Search{
+					vs.Search = append(vs.Search, Search{
 						Column: xxhash.Sum64(b),
 						Values: values,
 						OP:     bitmaps.EQ,
@@ -144,15 +142,14 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 	return
 }
 
-func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (vs *views.List, err error) {
+func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (vs *view, err error) {
 	vs = shardsPool.Get()
 
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		cu := tx.Bucket(admin).Cursor()
-		for k, v := cu.First(); v != nil; k, v = cu.Next() {
-			o := magic.ReinterpretSlice[views.Meta](v)
+		for _, v := cu.First(); v != nil; _, v = cu.Next() {
+			o := magic.ReinterpretSlice[meta](v)
 			if o[0].InRange(start, end) {
-				vs.Shards = append(vs.Shards, binary.BigEndian.Uint64(k))
 				vs.Meta = append(vs.Meta, o[0])
 			}
 		}
@@ -164,7 +161,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 			cu := searchB.Cursor()
 		top:
 			for i := range matchers {
-				ls := make([]views.Search, 0, len(matchers[i]))
+				ls := make([]Search, 0, len(matchers[i]))
 			local:
 				for _, m := range matchers[i] {
 					switch m.Type {
@@ -182,9 +179,9 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							continue top
 						}
 						va := binary.BigEndian.Uint64(value)
-						ls = append(ls, views.Search{
+						ls = append(ls, Search{
 							Column: xxhash.Sum64(b),
-							Values: []views.Value{
+							Values: []Value{
 								{Predicate: int64(va)},
 							},
 							OP: bitmaps.EQ,
@@ -200,9 +197,9 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							continue local
 						}
 						va := binary.BigEndian.Uint64(value)
-						ls = append(ls, views.Search{
+						ls = append(ls, Search{
 							Column: xxhash.Sum64(b),
-							Values: []views.Value{
+							Values: []Value{
 								{Predicate: int64(va)},
 							},
 							OP: bitmaps.NEQ,
@@ -216,13 +213,13 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							continue top
 						}
 						mb := searchB.Bucket(b)
-						values := make([]views.Value, 0, 64)
+						values := make([]Value, 0, 64)
 
 						mc := mb.Cursor()
 						prefix := magic.Slice(m.Prefix())
 						for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
 							va := binary.BigEndian.Uint64(b)
-							values = append(values, views.Value{Predicate: int64(va)})
+							values = append(values, Value{Predicate: int64(va)})
 						}
 						if len(values) == 0 {
 							continue top
@@ -230,7 +227,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 						sort.Slice(values, func(i, j int) bool {
 							return values[i].Predicate < values[j].Predicate
 						})
-						ls = append(ls, views.Search{
+						ls = append(ls, Search{
 							Column: xxhash.Sum64(b),
 							Values: values,
 							OP:     bitmaps.EQ,
@@ -242,13 +239,13 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							continue
 						}
 						mb := searchB.Bucket(b)
-						values := make([]views.Value, 0, 64)
+						values := make([]Value, 0, 64)
 
 						mc := mb.Cursor()
 						prefix := magic.Slice(m.Prefix())
 						for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && !m.Matches(magic.String(a)); a, b = mc.Next() {
 							va := binary.BigEndian.Uint64(b)
-							values = append(values, views.Value{Predicate: int64(va)})
+							values = append(values, Value{Predicate: int64(va)})
 						}
 						if len(values) == 0 {
 							continue top
@@ -256,7 +253,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 						sort.Slice(values, func(i, j int) bool {
 							return values[i].Predicate < values[j].Predicate
 						})
-						ls = append(ls, views.Search{
+						ls = append(ls, Search{
 							Column: xxhash.Sum64(b),
 							Values: values,
 							OP:     bitmaps.EQ,

@@ -11,7 +11,6 @@ import (
 	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/samples"
-	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -99,7 +98,7 @@ func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(na
 	return result.MakeSeries(cb)
 }
 
-func (db *Store) readSeries(result *samples.Samples, vs *views.List, start, end int64) error {
+func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
 	tx, err := db.rbf.Begin(false)
 	if err != nil {
 		return err
@@ -111,13 +110,13 @@ func (db *Store) readSeries(result *samples.Samples, vs *views.List, start, end 
 		return err
 	}
 
-	for i := range vs.Shards {
-		shard := vs.Shards[i]
+	for i := range vs.Meta {
+		shard := uint64(vs.Meta[i].shard)
 		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].TsDepth, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].depth.ts, bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
@@ -129,11 +128,11 @@ func (db *Store) readSeries(result *samples.Samples, vs *views.List, start, end 
 		if !ok {
 			panic("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Float), 0)
+		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.Float), 0)
 		if err != nil {
 			return err
 		}
-		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].KindDepth, bitmaps.EQ, int64(keys.Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.Histogram), 0)
 		if err != nil {
 			return err
 		}

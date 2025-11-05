@@ -10,7 +10,6 @@ import (
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/views"
 	"go.etcd.io/bbolt"
 )
 
@@ -29,8 +28,7 @@ func (db *Store) applyRetentionPolicy() error {
 
 	// first delete metadata, this ensures that we will never touch the index with
 	// deleted shards.
-	var meta []views.Meta
-	var shard []uint64
+	var metadata []meta
 	err := db.txt.Update(func(tx *bbolt.Tx) error {
 		adminB := tx.Bucket(admin)
 		var limit [8]byte
@@ -38,8 +36,7 @@ func (db *Store) applyRetentionPolicy() error {
 
 		cu := adminB.Cursor()
 		for k, v := cu.First(); v != nil && bytes.Compare(k, limit[:]) < 0; k, v = cu.Next() {
-			shard = append(shard, binary.BigEndian.Uint64(k))
-			meta = append(meta, magic.ReinterpretSlice[views.Meta](v)...)
+			metadata = append(metadata, magic.ReinterpretSlice[meta](v)...)
 			err := cu.Delete()
 			if err != nil {
 				return err
@@ -50,7 +47,7 @@ func (db *Store) applyRetentionPolicy() error {
 	if err != nil {
 		return fmt.Errorf("deleting metadata %w", err)
 	}
-	if len(shard) == 0 {
+	if len(metadata) == 0 {
 		return nil
 	}
 
@@ -72,23 +69,23 @@ func (db *Store) applyRetentionPolicy() error {
 	hsDepth := bits.Len64(uint64(keys.Histogram)) + 1
 	exeDepth := bits.Len64(uint64(keys.Exemplar)) + 1
 
-	for i := range meta {
-		if meta[i].KindDepth >= uint8(exeDepth) {
+	for i := range metadata {
+		if metadata[i].depth.kind >= uint8(exeDepth) {
 			ex = i
 		}
-		if meta[i].KindDepth >= uint8(hsDepth) {
+		if metadata[i].depth.kind >= uint8(hsDepth) {
 			hs = i
 		}
 	}
 
 	if hs != -1 {
-		maxHistogram, err = db.findMaxHistogram(shard[hs], meta[hs].KindDepth)
+		maxHistogram, err = db.findMaxHistogram(metadata[hs].shard, metadata[hs].depth.kind)
 		if err != nil {
 			return fmt.Errorf("searching maximum histogram value %w", err)
 		}
 	}
 	if ex != -1 {
-		maxExemplar, err = db.findMaxExemplar(shard[ex], meta[ex].KindDepth)
+		maxExemplar, err = db.findMaxExemplar(metadata[ex].shard, metadata[ex].depth.kind)
 		if err != nil {
 			return fmt.Errorf("searching maximum exemplar value %w", err)
 		}
@@ -126,12 +123,12 @@ func (db *Store) applyRetentionPolicy() error {
 		}
 	}
 
-	for i := range shard {
-		err := db.deleteShard(shard[i])
+	for i := range metadata {
+		err := db.deleteShard(metadata[i].shard)
 		if err != nil {
 			return err
 		}
-		db.lo.Info("deleting obsolete shard", "shard", shard[i])
+		db.lo.Info("deleting obsolete shard", "shard", metadata[i].shard)
 	}
 	return nil
 }

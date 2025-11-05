@@ -6,7 +6,6 @@ import (
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/raw"
-	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/gernest/roaring"
 )
 
@@ -31,7 +30,7 @@ func readRaw(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring
 	return result.From(cu, shard, uint8(depth), filter)
 }
 
-func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers [][]views.Search) (*roaring.Bitmap, error) {
+func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers [][]Search) (*roaring.Bitmap, error) {
 	all := make([]*roaring.Bitmap, 0, len(matchers))
 	for i := range matchers {
 		m := matchers[i]
@@ -60,7 +59,7 @@ func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *
 	return filter.Intersect(all[0].Union(all[1:]...)), nil
 }
 
-func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers []views.Search) (*roaring.Bitmap, error) {
+func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers []Search) (*roaring.Bitmap, error) {
 	for i := range matchers {
 		rx, err := readBSIFilter(tx, records, shard, &matchers[i])
 		if err != nil {
@@ -74,7 +73,7 @@ func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roa
 	return filter, nil
 }
 
-func readBSIFilter(tx *rbf.Tx, records *rbf.Records, shard uint64, match *views.Search) (*roaring.Bitmap, error) {
+func readBSIFilter(tx *rbf.Tx, records *rbf.Records, shard uint64, match *Search) (*roaring.Bitmap, error) {
 	root, ok := records.Get(rbf.Key{Column: match.Column, Shard: shard})
 	if !ok {
 		return nil, fmt.Errorf("missing root record for column %d", match.Column)

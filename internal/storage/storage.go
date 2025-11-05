@@ -16,7 +16,6 @@ import (
 	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/bsi/internal/storage/tsid"
-	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
@@ -108,7 +107,7 @@ func (db *Store) MinTs() (ts int64, err error) {
 		adminB := tx.Bucket(admin)
 		_, v := adminB.Cursor().First()
 		if v != nil {
-			ts = magic.ReinterpretSlice[views.Meta](v)[0].Min
+			ts = magic.ReinterpretSlice[meta](v)[0].min
 		}
 		return nil
 	})
@@ -121,7 +120,7 @@ func (db *Store) MaxTs() (ts int64, err error) {
 		adminB := tx.Bucket(admin)
 		_, v := adminB.Cursor().Last()
 		if v != nil {
-			ts = magic.ReinterpretSlice[views.Meta](v)[0].Max
+			ts = magic.ReinterpretSlice[meta](v)[0].max
 		}
 		return nil
 	})
@@ -139,7 +138,7 @@ func (db *Store) AddRows(rows *rows.Rows) error {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
 
-	ma := make(views.Map)
+	ma := make(batch)
 
 	lo := hi - uint64(rows.Size())
 
@@ -168,14 +167,14 @@ func (db *Store) AddRows(rows *rows.Rows) error {
 	return nil
 }
 
-func (db *Store) saveMetadata(ma views.Map) error {
+func (db *Store) saveMetadata(ma batch) error {
 	var key [8]byte
 	return db.txt.Update(func(tx *bbolt.Tx) error {
 		adminB := tx.Bucket(admin)
 		cu := adminB.Cursor()
-		var first views.Meta
+		var first meta
 		if _, v := cu.First(); v != nil {
-			first = magic.ReinterpretSlice[views.Meta](v)[0]
+			first = magic.ReinterpretSlice[meta](v)[0]
 		}
 		shards := make([]uint64, 0, len(ma))
 		for k := range ma {
@@ -189,15 +188,15 @@ func (db *Store) saveMetadata(ma views.Map) error {
 			data := ma[shard]
 			binary.BigEndian.PutUint64(key[:], shard)
 			if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
-				data.Meta.Update(&magic.ReinterpretSlice[views.Meta](v)[0])
+				data.meta.Update(&magic.ReinterpretSlice[meta](v)[0])
 			}
 
-			err := adminB.Put(key[:], data.Meta.Bytes())
+			err := adminB.Put(key[:], magic.ReinterpretSlice[byte]([]meta{data.meta}))
 			if err != nil {
 				return fmt.Errorf("updating shard data %w", err)
 			}
 
-			if retention != 0 && db.deletion.Load() == 0 && (data.Meta.Max-first.Max) >= retention {
+			if retention != 0 && db.deletion.Load() == 0 && (data.meta.max-first.max) >= retention {
 				db.deletion.Store(shard)
 			}
 		}
@@ -206,7 +205,7 @@ func (db *Store) saveMetadata(ma views.Map) error {
 	})
 }
 
-func (db *Store) apply(ma views.Map) error {
+func (db *Store) apply(ma batch) error {
 
 	tx, err := db.rbf.Begin(true)
 	if err != nil {
@@ -215,7 +214,7 @@ func (db *Store) apply(ma views.Map) error {
 	defer tx.Rollback()
 	for shard, v := range ma {
 
-		for col, ra := range v.Columns {
+		for col, ra := range v.columns {
 			ra.Optimize()
 			_, err = tx.AddRoaring(rbf.Key{Column: col, Shard: shard}, ra)
 			if err != nil {

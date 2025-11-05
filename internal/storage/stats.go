@@ -2,7 +2,6 @@ package storage
 
 import (
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.etcd.io/bbolt"
@@ -20,10 +19,10 @@ func (db *Store) Stats(statsByLabelName string, _ int) (result *tsdb.Stats, err 
 		adminB := tx.Bucket(admin)
 		cu := adminB.Cursor()
 		if _, v := cu.First(); v != nil {
-			result.MinTime = magic.ReinterpretSlice[views.Meta](v)[0].Min
+			result.MinTime = magic.ReinterpretSlice[meta](v)[0].min
 		}
 		if _, v := cu.Last(); v != nil {
-			result.MaxTime = magic.ReinterpretSlice[views.Meta](v)[0].Max
+			result.MaxTime = magic.ReinterpretSlice[meta](v)[0].max
 		}
 		indexB := tx.Bucket(search)
 		cu = indexB.Cursor()
