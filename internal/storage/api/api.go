@@ -10,7 +10,6 @@ import (
 	"time"
 
 	db "github.com/gernest/bsi/internal/storage"
-	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -22,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var rowsPool rows.Pool
+var rowsPool = db.Pool[*db.Rows]{Init: db.RowsItem{}}
 
 // API implements prometheus storage api on top of our own timeseries database.
 type API struct {
@@ -76,7 +75,7 @@ func (a *API) Appender(_ context.Context) storage.Appender {
 }
 
 type appender struct {
-	set *rows.Rows
+	set *db.Rows
 	db  *db.Store
 }
 

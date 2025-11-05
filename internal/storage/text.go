@@ -11,7 +11,6 @@ import (
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,7 +27,7 @@ var (
 	search        = []byte("index")
 )
 
-func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
+func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 
 	// we make sure out.B has the same size as labels.
 	size := len(r.Labels)

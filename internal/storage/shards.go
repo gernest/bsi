@@ -12,7 +12,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var shardsPool = pool[*view]{init: viewsItems{}}
+var shardsPool = Pool[*view]{Init: viewsItems{}}
 
 // Search for all shards that have timestamps within the start and end range. To avoid opeting
 // another database transaction, we also decode matchers for searching in our RBF storage.

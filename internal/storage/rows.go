@@ -1,30 +1,20 @@
-package rows
+package storage
 
 import (
 	"bytes"
 	"math"
-	"sync"
 
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type Pool struct {
-	p sync.Pool
-}
+type RowsItem struct{}
 
-func (p *Pool) Get() *Rows {
-	if v := p.p.Get(); v != nil {
-		return v.(*Rows)
-	}
-	return &Rows{}
-}
+func (RowsItem) Init() *Rows         { return new(Rows) }
+func (RowsItem) Reset(v *Rows) *Rows { return v.Reset() }
 
-func (p *Pool) Put(r *Rows) {
-	r.Reset()
-	p.p.Put(r)
-}
+var _ PooledItem[*Rows] = (*RowsItem)(nil)
 
 // Rows is an in memory batch of metrics belonging to a single view.
 type Rows struct {
@@ -110,7 +100,7 @@ func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
 }
 
 // Reset resets r fields and retain capacity.
-func (r *Rows) Reset() {
+func (r *Rows) Reset() *Rows {
 	r.Labels = reset(r.Labels)
 	r.Timestamp = reset(r.Timestamp)
 	r.Value = reset(r.Value)
@@ -119,6 +109,7 @@ func (r *Rows) Reset() {
 	r.Exemplar = reset(r.Exemplar)
 	r.Kind = reset(r.Kind)
 	r.flags = 0
+	return r
 }
 
 func reset[T any](a []T) []T {

@@ -2,23 +2,23 @@ package storage
 
 import "sync"
 
-type pooledItem[T any] interface {
+type PooledItem[T any] interface {
 	Init() T
 	Reset(T) T
 }
 
-type pool[T any] struct {
-	init pooledItem[T]
+type Pool[T any] struct {
+	Init PooledItem[T]
 	base sync.Pool
 }
 
-func (p *pool[T]) Get() T {
+func (p *Pool[T]) Get() T {
 	if v := p.base.Get(); v != nil {
 		return v.(T)
 	}
-	return p.init.Init()
+	return p.Init.Init()
 }
 
-func (p *pool[T]) Put(v T) {
-	p.base.Put(p.init.Reset(v))
+func (p *Pool[T]) Put(v T) {
+	p.base.Put(p.Init.Reset(v))
 }

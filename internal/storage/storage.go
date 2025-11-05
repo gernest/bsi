@@ -13,7 +13,6 @@ import (
 
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring/shardwidth"
@@ -128,7 +127,7 @@ func (db *Store) MaxTs() (ts int64, err error) {
 }
 
 // AddRows index and store rows.
-func (db *Store) AddRows(rows *rows.Rows) error {
+func (db *Store) AddRows(rows *Rows) error {
 
 	ids := tsidPool.Get()
 	defer tsidPool.Put(ids)

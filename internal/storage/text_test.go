@@ -9,7 +9,6 @@ import (
 
 	"github.com/cockroachdb/datadriven"
 	"github.com/gernest/bsi/internal/storage/buffer"
-	"github.com/gernest/bsi/internal/storage/rows"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -28,7 +27,7 @@ func TestText(t *testing.T) {
 			defer db.Close()
 			var o bytes.Buffer
 			fmt.Fprintln(&o, filepath.Base(db.txt.Path()))
-			r := &rows.Rows{}
+			r := &Rows{}
 			for line := range strings.SplitSeq(td.Input, "\n") {
 				if strings.HasPrefix(line, "{") {
 					la, err := parser.ParseMetric(line)
