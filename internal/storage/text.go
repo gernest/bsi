@@ -7,7 +7,7 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/gernest/bsi/internal/checksum"
+	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/keys"
 	"github.com/gernest/bsi/internal/storage/magic"
@@ -61,7 +61,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 				out.B[i] = out.B[i-1]
 				continue
 			}
-			sum := binary.BigEndian.AppendUint64(sumB[:0], checksum.Hash(r.Labels[i]))
+			sum := binary.BigEndian.AppendUint64(sumB[:0], xxhash.Sum64(r.Labels[i]))
 			if got := metricsSumB.Get(sum); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
@@ -87,7 +87,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *rows.Rows) (hi uint64, err error) {
 				if err != nil {
 					return fmt.Errorf("creating label bucket %w", err)
 				}
-				view := checksum.Hash(name)
+				view := xxhash.Sum64(name)
 
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
@@ -240,7 +240,7 @@ func LabelMatchers(db *bbolt.DB, result *Matchers, matches []*labels.Matcher) er
 		searchB := tx.Bucket(search)
 
 		for _, l := range matches {
-			col := checksum.Hash(magic.Slice(l.Name))
+			col := xxhash.Sum64(magic.Slice(l.Name))
 			ra := roaring.NewBitmap()
 			var negate bool
 			switch l.Type {

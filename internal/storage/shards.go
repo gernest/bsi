@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"sort"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
-	"github.com/gernest/bsi/internal/checksum"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/views"
 	"github.com/prometheus/prometheus/model/labels"
@@ -53,7 +53,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					}
 					va := binary.BigEndian.Uint64(value)
 					vs.Search = append(vs.Search, views.Search{
-						Column: checksum.Hash(b),
+						Column: xxhash.Sum64(b),
 						Values: []views.Value{
 							{Predicate: int64(va)},
 						},
@@ -71,7 +71,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 					}
 					va := binary.BigEndian.Uint64(value)
 					vs.Search = append(vs.Search, views.Search{
-						Column: checksum.Hash(b),
+						Column: xxhash.Sum64(b),
 						Values: []views.Value{
 							{Predicate: int64(va)},
 						},
@@ -102,7 +102,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						return values[i].Predicate < values[j].Predicate
 					})
 					vs.Search = append(vs.Search, views.Search{
-						Column: checksum.Hash(b),
+						Column: xxhash.Sum64(b),
 						Values: values,
 						OP:     bitmaps.EQ,
 					})
@@ -128,7 +128,7 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 						return values[i].Predicate < values[j].Predicate
 					})
 					vs.Search = append(vs.Search, views.Search{
-						Column: checksum.Hash(b),
+						Column: xxhash.Sum64(b),
 						Values: values,
 						OP:     bitmaps.EQ,
 					})
@@ -183,7 +183,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 						}
 						va := binary.BigEndian.Uint64(value)
 						ls = append(ls, views.Search{
-							Column: checksum.Hash(b),
+							Column: xxhash.Sum64(b),
 							Values: []views.Value{
 								{Predicate: int64(va)},
 							},
@@ -201,7 +201,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 						}
 						va := binary.BigEndian.Uint64(value)
 						ls = append(ls, views.Search{
-							Column: checksum.Hash(b),
+							Column: xxhash.Sum64(b),
 							Values: []views.Value{
 								{Predicate: int64(va)},
 							},
@@ -231,7 +231,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							return values[i].Predicate < values[j].Predicate
 						})
 						ls = append(ls, views.Search{
-							Column: checksum.Hash(b),
+							Column: xxhash.Sum64(b),
 							Values: values,
 							OP:     bitmaps.EQ,
 						})
@@ -257,7 +257,7 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 							return values[i].Predicate < values[j].Predicate
 						})
 						ls = append(ls, views.Search{
-							Column: checksum.Hash(b),
+							Column: xxhash.Sum64(b),
 							Values: values,
 							OP:     bitmaps.EQ,
 						})

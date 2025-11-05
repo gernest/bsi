@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gernest/bsi/internal/checksum"
+	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/rbf/cfg"
 	"github.com/gernest/roaring"
 	"github.com/stretchr/testify/require"
@@ -20,7 +20,7 @@ import (
 func rbfName(index, field, view string, shard uint64) Key {
 	k := fmt.Sprintf("%v:%v:%v;%v", index, field, view, shard)
 	return Key{
-		Column: checksum.Hash([]byte(k)),
+		Column: xxhash.Sum64([]byte(k)),
 	}
 }
 
