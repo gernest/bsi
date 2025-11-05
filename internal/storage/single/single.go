@@ -44,8 +44,8 @@ func (g *Group[K, T, O]) Close() (err error) {
 }
 
 // Init initializes group.
-func (g *Group[K, T, O]) Init(open func(K, O) (T, error)) {
-	g.lo = slog.Default().With("component", "singleflight")
+func (g *Group[K, T, O]) Init(lo *slog.Logger, open func(K, O) (T, error)) {
+	g.lo = lo
 	g.m = make(map[K]*call[T])
 	g.open = open
 }
@@ -69,7 +69,7 @@ func (g *Group[K, T, O]) Do(key K, opts O) (T, io.Closer, error) {
 	c = new(call[T])
 	c.wg.Add(1)
 	g.m[key] = c
-	g.lo.Info("opening resource", "key", key)
+	g.lo.Debug("opening resource", "key", key)
 	c.val, c.err = g.open(key, opts)
 	if c.err != nil {
 		g.lo.Error("failed opening resource", "key", key, "err", c.err)
@@ -92,7 +92,7 @@ func (g *Group[K, T, O]) release(key K, u *call[T]) io.Closer {
 		defer g.mu.Unlock()
 		u.ref--
 		if u.ref == 0 {
-			g.lo.Info("releasing resource", "key", key)
+			g.lo.Debug("releasing resource", "key", key)
 			err := u.val.Close()
 			delete(g.m, key)
 			return err

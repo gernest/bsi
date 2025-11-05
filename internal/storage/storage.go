@@ -80,7 +80,7 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 		return nil
 	})
 
-	db.rbf.Init(func(ym yyyyMM, s string) (*rbf.DB, error) {
+	db.rbf.Init(lo, func(ym yyyyMM, s string) (*rbf.DB, error) {
 		path := filepath.Join(s, ym.String())
 		da := rbf.NewDB(path, nil)
 		err := da.Open()

@@ -3,7 +3,7 @@ data-source:
   type: FILE
   # generate data on the fly
   file:
-    location: benchmarks/10000-2025-11-01T00:00:00Z-2025-11-02T00:00:00Z-80s.tsbs
+    location: benchmarks/10000-2025-11-04T00:00:00Z-2025-11-05T00:00:00Z-80s.tsbs
 loader:
   db-specific:
     adapter-write-url: "http://localhost:9090/api/v1/write"
