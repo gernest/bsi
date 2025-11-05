@@ -46,13 +46,13 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 		return err
 	}
 
-	for i := range vs.Meta {
-		shard := uint64(vs.Meta[i].shard)
+	for i := range vs.meta {
+		shard := uint64(vs.meta[i].shard)
 		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].depth.ts, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, vs.meta[i].depth.ts, bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 		if !ok {
 			panic("missing metric type root records")
 		}
-		exe, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.Exemplar), 0)
+		exe, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Exemplar), 0)
 		if err != nil {
 			return err
 		}
@@ -74,12 +74,12 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 			continue
 		}
 
-		ra, err = applyBSIFiltersAny(tx, records, shard, ra, vs.SearchAny)
+		ra, err = applyBSIFiltersAny(tx, records, shard, ra, vs.matchAny)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}
 
-		err = readExemplars(result, vs.Meta[i], tx, records, shard, ra)
+		err = readExemplars(result, vs.meta[i], tx, records, shard, ra)
 		if err != nil {
 			return err
 		}

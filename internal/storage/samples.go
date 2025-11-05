@@ -56,13 +56,13 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 		return err
 	}
 
-	for i := range vs.Meta {
-		shard := uint64(vs.Meta[i].shard)
+	for i := range vs.meta {
+		shard := uint64(vs.meta[i].shard)
 		tsP, ok := records.Get(rbf.Key{Column: keys.MetricsTimestamp, Shard: shard})
 		if !ok {
 			panic("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, vs.Meta[i].depth.ts, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, vs.meta[i].depth.ts, bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
@@ -74,16 +74,16 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 		if !ok {
 			panic("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.Float), 0)
+		float, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Float), 0)
 		if err != nil {
 			return err
 		}
 
-		histogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.Histogram), 0)
 		if err != nil {
 			return err
 		}
-		floatHistogram, err := readBSIRange(tx, kind, shard, vs.Meta[i].depth.kind, bitmaps.EQ, int64(keys.FloatHistogram), 0)
+		floatHistogram, err := readBSIRange(tx, kind, shard, vs.meta[i].depth.kind, bitmaps.EQ, int64(keys.FloatHistogram), 0)
 		if err != nil {
 			return err
 		}
@@ -94,12 +94,12 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			continue
 		}
 
-		ra, err = applyBSIFilters(tx, records, shard, ra, vs.Search)
+		ra, err = applyBSIFilters(tx, records, shard, ra, vs.match)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}
 
-		err = readSamples(result, vs.Meta[i], tx, records, shard, ra)
+		err = readSamples(result, vs.meta[i], tx, records, shard, ra)
 		if err != nil {
 			return err
 		}

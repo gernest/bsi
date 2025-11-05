@@ -23,34 +23,37 @@ var _ pooledItem[*view] = (*viewsItems)(nil)
 // All data for view is read from txt database. Think of this as a guideline on
 // what to read from rbf storage.
 type view struct {
-	Meta      []meta
-	Search    []Search
-	SearchAny [][]Search
+	meta []meta
+	// when provided  applies an intersection of all match
+	match []match
+	// when provided applies a union of intersecting []match.
+	// used with exemplars search.
+	matchAny [][]match
 }
 
-type Search struct {
-	Values []Value
-	Column uint64
-	OP     bitmaps.OP
+type match struct {
+	rows   []row
+	column uint64
+	op     bitmaps.OP
 }
 
-type Value struct {
-	Predicate int64
-	End       int64
+type row struct {
+	predicate int64
+	end       int64
 }
 
-func (v *Value) Depth() uint8 {
-	return uint8(bits.Len64(max(uint64(v.Predicate), uint64(v.End))))
+func (v *row) Depth() uint8 {
+	return uint8(bits.Len64(max(uint64(v.predicate), uint64(v.end))))
 }
 
 func (v *view) IsEmpty() bool {
-	return len(v.Meta) == 0
+	return len(v.meta) == 0
 }
 
 func (v *view) Reset() *view {
-	v.Meta = v.Meta[:0]
-	v.Search = v.Search[:0]
-	v.SearchAny = v.SearchAny[:0]
+	v.meta = v.meta[:0]
+	v.match = v.match[:0]
+	v.matchAny = v.matchAny[:0]
 	return v
 }
 
