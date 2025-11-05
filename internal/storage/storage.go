@@ -24,7 +24,7 @@ var tsidPool tsid.Pool
 
 // Store implements timeseries database.
 type Store struct {
-	rbf single.Group[yyyyMM, *rbf.DB, string]
+	rbf single.Group[shardYM, *rbf.DB, string]
 	txt *bbolt.DB
 	lo  *slog.Logger
 
@@ -80,8 +80,8 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 		return nil
 	})
 
-	db.rbf.Init(lo, func(ym yyyyMM, s string) (*rbf.DB, error) {
-		path := filepath.Join(s, ym.String())
+	db.rbf.Init(lo, func(ym shardYM, s string) (*rbf.DB, error) {
+		path := filepath.Join(s, ym.ym.String(), fmt.Sprintf("%06d", ym.shard))
 		da := rbf.NewDB(path, nil)
 		err := da.Open()
 		if err != nil {
@@ -217,32 +217,27 @@ func (db *Store) apply(ma partitions) error {
 }
 
 func (db *Store) applyPartition(ym yyyyMM, ma batch) error {
-	da, done, err := db.rbf.Do(ym, db.dataPath)
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	tx, err := da.Begin(true)
-	if err != nil {
-		return fmt.Errorf("creating write transaction %w", err)
-	}
-	defer tx.Rollback()
 	for shard, v := range ma {
-
-		for col, ra := range v.columns {
-			ra.Optimize()
-			_, err = tx.AddRoaring(rbf.Key{Column: col, Shard: shard}, ra)
-			if err != nil {
-				return fmt.Errorf("writing bitmap %w", err)
+		err := db.partition(ym, shard, true, func(tx *rbf.Tx) error {
+			for col, ra := range v.columns {
+				ra.Optimize()
+				_, err := tx.AddRoaring(rbf.Key{Column: col, Shard: shard}, ra)
+				if err != nil {
+					return fmt.Errorf("writing bitmap %w", err)
+				}
 			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
+
 	}
-	return tx.Commit()
+	return nil
 }
 
-func (db *Store) partition(key yyyyMM, writable bool, cb func(tx *rbf.Tx) error) error {
-	da, done, err := db.rbf.Do(key, db.dataPath)
+func (db *Store) partition(key yyyyMM, shard uint64, writable bool, cb func(tx *rbf.Tx) error) error {
+	da, done, err := db.rbf.Do(shardYM{shard: shard, ym: key}, db.dataPath)
 	if err != nil {
 		return err
 	}

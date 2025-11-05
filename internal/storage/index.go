@@ -71,6 +71,11 @@ type yyyyMM struct {
 	month time.Month
 }
 
+type shardYM struct {
+	shard uint64
+	ym    yyyyMM
+}
+
 func partitionKey(t int64) yyyyMM {
 	yy, mm, _ := time.UnixMilli(t).Date()
 	return yyyyMM{year: yy, month: mm}
@@ -239,22 +244,21 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 
 func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
 	for i := range vs.partition {
-		err := db.partition(vs.partition[i], false, func(tx *rbf.Tx) error {
-			records, err := tx.RootRecords()
-			if err != nil {
-				return err
-			}
-			for _, m := range vs.meta[i] {
-				err := cb(tx, records, m)
+
+		for j := range vs.meta[i] {
+			m := vs.meta[i][j]
+			err := db.partition(vs.partition[i], m.shard, false, func(tx *rbf.Tx) error {
+				records, err := tx.RootRecords()
 				if err != nil {
 					return err
 				}
+				return cb(tx, records, m)
+			})
+			if err != nil {
+				return err
 			}
-			return nil
-		})
-		if err != nil {
-			return err
 		}
+
 	}
 	return nil
 }
