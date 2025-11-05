@@ -249,5 +249,12 @@ func (db *Store) partition(key yyyyMM, shard uint64, writable bool, cb func(tx *
 	}
 	defer tx.Rollback()
 
-	return cb(tx)
+	err = cb(tx)
+	if err != nil {
+		return err
+	}
+	if writable {
+		return tx.Commit()
+	}
+	return nil
 }
