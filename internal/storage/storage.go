@@ -166,6 +166,7 @@ func (db *Store) AddRows(rows *Rows) error {
 			ba.Value(id, rows.Value[idx])
 			ba.Kind(id, rows.Kind[idx])
 			ba.Index(id, ids.B[idx])
+			ba.meta.SetFull(id)
 		}
 
 	}

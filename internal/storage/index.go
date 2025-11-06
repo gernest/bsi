@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"math/bits"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
+	"github.com/gernest/roaring/shardwidth"
 	"go.etcd.io/bbolt"
 )
 
@@ -73,6 +75,14 @@ type batch map[uint64]*data
 type yyyyMM struct {
 	year  int
 	month time.Month
+}
+
+func (y *yyyyMM) Compare(o *yyyyMM) int {
+	x := cmp.Compare(y.year, o.year)
+	if x != 0 {
+		return x
+	}
+	return cmp.Compare(y.month, o.month)
 }
 
 type shardYM struct {
@@ -163,6 +173,17 @@ type meta struct {
 		kind  uint8
 		label uint8
 	}
+	// true if the shard is full.
+	full bool
+}
+
+const mask = uint64(shardwidth.ShardWidth - 1)
+
+func (s *meta) SetFull(id uint64) {
+	if s.full {
+		return
+	}
+	s.full = (id & mask) == 0
 }
 
 func (s *meta) InRange(lo, hi int64) bool {
@@ -179,34 +200,9 @@ func (s *meta) Update(other *meta) {
 	s.depth.value = max(s.depth.value, other.depth.value)
 	s.depth.label = max(s.depth.label, other.depth.label)
 	s.depth.kind = max(s.depth.kind, other.depth.kind)
-}
-
-// AddIndex builds search index from tsid.Prometheus validates that label names are unique,
-// which allows us to treat each label name observed as a unique bitmap.
-//
-// We encode series id as BSI in (MetricsLabels, each label name generates a unique bitmap
-// that stores the (column_id, label_value) tuple encoded BSI.
-func (s *data) AddIndex(start uint64, values []tsid.ID, kinds []Kind) {
-	labels := s.get(MetricsLabels)
-	var hi uint64
-	id := start
-	for i := range values {
-		if kinds[i] == None {
-			continue
-		}
-		la := values[i]
-		hi = max(la[0].Value, hi)
-		bitmaps.BSI(labels, id, int64(la[0].Value))
-		for j := range la {
-			if j == 0 {
-				continue
-			}
-			bitmaps.BSI(s.get(la[j].ID), id, int64(la[j].Value))
-		}
-		id++
+	if !s.full {
+		s.full = other.full
 	}
-	s.meta.depth.label = uint8(bits.Len64(hi)) + 1
-
 }
 
 func (s *data) Index(id uint64, value tsid.ID) {
