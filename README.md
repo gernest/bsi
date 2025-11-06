@@ -1,4 +1,4 @@
-# BSI - disc based storage engine for Prometheus
+# BSI - columnar and disc based storage engine for Prometheus
 BSI is a new storage engine for Prometheus, it replaces existing `tsdb` used by 
 upstream prometheus with a compressed roaring bitmaps based storage that has
 the following core features.
