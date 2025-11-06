@@ -1,16 +1,14 @@
-# BSI
-Fast and cost effective prometheus
+# BSI - disc based storage engine for Prometheus
+BSI is a new storage engine for Prometheus, it replaces existing `tsdb` used by 
+upstream prometheus with a compressed roaring bitmaps based storage that stores has
+the following core features.
 
-- **Low memory footprint** : series data is kept on disc
-- **Low storage footprint**: samples are stored as Compressed Roaring Bitmaps
-- **Fast and efficient**: there is no decompression step once data is ingested.
-- **Permanent storage**: you don't need remote storage
-- **Fully prometheus**: we only replace storage, the rest is the same code as prometheus.
-- **High cardinality**: we support high cardinality time series data at scale.
+- **Low memory footprint** 
+- **Low disc storage footprint**
+- **fast and efficient**
+- **permanent storage**
+- **Fully prometheus**
+- **High cardinality**
 
-## deprecations
-- `prometheus_tsdb_head_min_time_seconds` is removed
-- `prometheus_tsdb_head_max_time_seconds` is renamed to `prometheus_tsdb_max_time_seconds`
-- `seriesCountByLabelValuePair` from TSDBStatus is removed.
-- `memoryInBytesByLabelName` from TSDBStatus is removed.
-- `CleanTombstones`, `Delete`, and `BlockMetas` from api_v1.TSDBAdminStats and api_v2.TSDBAdmin  interfaces are removed
+With BSI there is no need for third party remote storage, a single prometheus instance 
+can handle up to 1 million active timeseries without being OOM killed.
