@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/tsid"
@@ -25,7 +26,7 @@ func (viewsItems) Init() *view { return new(view) }
 
 func (viewsItems) Reset(v *view) *view { return v.Reset() }
 
-var _ PooledItem[*view] = (*viewsItems)(nil)
+var _ pools.PooledItem[*view] = (*viewsItems)(nil)
 
 // view is like a posting list with all shards that might contain data. This also
 // contains translation of label matchers which is shard agnostic.

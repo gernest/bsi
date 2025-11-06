@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gernest/bsi/internal/pools"
 	db "github.com/gernest/bsi/internal/storage"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -21,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var rowsPool = db.Pool[*db.Rows]{Init: db.RowsItem{}}
+var rowsPool = pools.Pool[*db.Rows]{Init: db.RowsItem{}}
 
 // API implements prometheus storage api on top of our own timeseries database.
 type API struct {

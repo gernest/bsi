@@ -8,12 +8,13 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
+	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )
 
-var shardsPool = Pool[*view]{Init: viewsItems{}}
+var shardsPool = pools.Pool[*view]{Init: viewsItems{}}
 
 // Search for all shards that have timestamps within the start and end range. To avoid opeting
 // another database transaction, we also decode matchers for searching in our RBF storage.
