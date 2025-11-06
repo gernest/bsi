@@ -166,7 +166,7 @@ func (db *DB) Backup(w io.Writer) error {
 		return err
 	}
 	defer tx.Rollback()
-	return tx.backup(w)
+	return tx.WriteTo(w)
 }
 
 // Restore restores a snapshot file obtained by calling (*DB)Backup in database

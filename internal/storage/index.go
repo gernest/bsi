@@ -1,16 +1,20 @@
 package storage
 
 import (
+	"bytes"
 	"fmt"
 	"math/bits"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
+	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
+	"go.etcd.io/bbolt"
 )
 
 type viewsItems struct{}
@@ -76,6 +80,10 @@ type shardYM struct {
 	ym    yyyyMM
 }
 
+func (s shardYM) String() string {
+	return partitionPath("", s)
+}
+
 func partitionKey(t int64) yyyyMM {
 	yy, mm, _ := time.UnixMilli(t).Date()
 	return yyyyMM{year: yy, month: mm}
@@ -95,6 +103,10 @@ func parsePartitionKey(k string) (yyyyMM, error) {
 		return yyyyMM{}, fmt.Errorf("invalid partition month %w", err)
 	}
 	return yyyyMM{year: yy, month: time.Month(mm)}, nil
+}
+
+func partitionPath(base string, ym shardYM) string {
+	return filepath.Join(base, ym.ym.String(), fmt.Sprintf("%06d", ym.shard))
 }
 
 func (y yyyyMM) String() string {
@@ -259,6 +271,32 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 			}
 		}
 
+	}
+	return nil
+}
+
+// walkPartitions iterates over all partitions within the lo and hi range. his is inclusive because we
+// want the last (year, month) to be searched as well.
+//
+// Returns any error returned by cb.
+func walkPartitions(tx *bbolt.Tx, lo, hi yyyyMM, cb func(key yyyyMM, m meta) error) error {
+	adminB := tx.Bucket(admin)
+	acu := adminB.Cursor()
+	from := []byte(lo.String())
+	to := []byte(hi.String())
+
+	for a, b := acu.Seek(from); a != nil && b == nil && bytes.Compare(a, to) < 1; a, b = acu.Next() {
+
+		ym, err := parsePartitionKey(magic.String(a))
+		if err != nil {
+			return err
+		}
+		err = adminB.Bucket(a).ForEach(func(_, v []byte) error {
+			return cb(ym, magic.ReinterpretSlice[meta](v)[0])
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

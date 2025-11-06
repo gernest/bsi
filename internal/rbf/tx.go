@@ -2018,7 +2018,8 @@ func (tx *Tx) SnapshotReader() (io.Reader, error) {
 	return &snapshotReader{tx: tx}, nil
 }
 
-func (tx *Tx) backup(w io.Writer) error {
+// WriteTo writes database contents to w.
+func (tx *Tx) WriteTo(w io.Writer) error {
 	if tx.db == nil {
 		return ErrTxClosed
 	}

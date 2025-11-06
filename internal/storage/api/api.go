@@ -58,7 +58,7 @@ func (a *API) Stats(statsByLabelName string, limit int) (result *tsdb.Stats, err
 }
 
 func (a *API) Snapshot(dir string, _ bool) error {
-	return a.db.Backup(dir)
+	return a.db.Snapshot(dir)
 }
 
 // Close implements storage.Storage .
