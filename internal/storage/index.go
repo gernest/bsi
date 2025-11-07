@@ -3,9 +3,11 @@ package storage
 import (
 	"bytes"
 	"cmp"
+	"errors"
 	"fmt"
 	"math/bits"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -14,11 +16,31 @@ import (
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
+	"github.com/gernest/bsi/internal/storage/raw"
+	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/bsi/internal/storage/tsid"
+	"github.com/gernest/bsi/internal/storage/work"
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
 	"go.etcd.io/bbolt"
 )
+
+var (
+	workPool   = pools.Pool[*partitionShardWork]{Init: workItems{}}
+	rawBSIPool = pools.Pool[*raw.BSI]{Init: bsiItems{}}
+)
+
+type bsiItems struct{}
+
+func (bsiItems) Init() *raw.BSI {
+	b := new(raw.BSI)
+	b.Init()
+	return b
+}
+
+func (bsiItems) Reset(v *raw.BSI) *raw.BSI { return v.Reset() }
+
+var _ pools.PooledItem[*raw.BSI] = (*bsiItems)(nil)
 
 type viewsItems struct{}
 
@@ -27,6 +49,25 @@ func (viewsItems) Init() *view { return new(view) }
 func (viewsItems) Reset(v *view) *view { return v.Reset() }
 
 var _ pools.PooledItem[*view] = (*viewsItems)(nil)
+
+type partitionShard struct {
+	Partition uint16
+	Shard     uint16
+}
+
+type partitionShardWork = work.Work[partitionShard]
+
+type workItems struct{}
+
+func (workItems) Init() *partitionShardWork {
+	return new(partitionShardWork)
+}
+
+func (workItems) Reset(v *partitionShardWork) *partitionShardWork {
+	return v.Reset()
+}
+
+var _ pools.PooledItem[*partitionShardWork] = (*workItems)(nil)
 
 // view is like a posting list with all shards that might contain data. This also
 // contains translation of label matchers which is shard agnostic.
@@ -251,24 +292,86 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 	return r
 }
 
-func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
-	for i := range vs.partition {
+func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
+	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
+		shard := m.shard
+		tsP, ok := records.Get(MetricsTimestamp)
+		if !ok {
+			return errors.New("missing ts root records")
+		}
+		ra, err := readBSIRange(tx, tsP, shard, m.depth.ts, bitmaps.BETWEEN, start, end)
+		if err != nil {
+			return err
+		}
+		if !ra.Any() {
+			return nil
+		}
 
-		for j := range vs.meta[i] {
-			m := vs.meta[i][j]
-			err := db.partition(vs.partition[i], m.shard, false, func(tx *rbf.Tx) error {
-				records, err := tx.RootRecords()
-				if err != nil {
-					return err
+		kind, ok := records.Get(MetricsType)
+		if !ok {
+			return errors.New("missing metric type root records")
+		}
+		float, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Float), 0)
+		if err != nil {
+			return err
+		}
+		histogram, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Histogram), 0)
+		if err != nil {
+			return err
+		}
+
+		// metric samples can either be histograms or floats.
+		ra = ra.Intersect(float.Union(histogram))
+		if !ra.Any() {
+			return nil
+		}
+
+		ra, err = applyBSIFilters(tx, records, shard, ra, vs.match)
+		if err != nil {
+			return fmt.Errorf("applying filters %w", err)
+		}
+
+		return readSeries(result, m, tx, records, shard, ra)
+	})
+
+}
+
+func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
+
+	w := workPool.Get()
+	defer workPool.Put(w)
+
+	// Generate shards positions that we will be working with concurrently
+	w.Init(func(yield func(partitionShard) bool) {
+		for i := range vs.partition {
+			for j := range vs.meta[i] {
+				if !yield(partitionShard{Partition: uint16(i), Shard: uint16(j)}) {
+					return
 				}
-				return cb(tx, records, m)
-			})
+			}
+		}
+	})
+
+	// Distribute work cross all available cores.
+	w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) {
+		m := vs.meta[item.Partition][item.Shard]
+		err := db.partition(vs.partition[item.Partition], m.shard, false, func(tx *rbf.Tx) error {
+			records, err := tx.RootRecords()
 			if err != nil {
 				return err
 			}
+			return cb(tx, records, m)
+		})
+		if err != nil {
+			// There is no way to safely propagate errors without complicating logic.
+			// We can log shards with errors and keep on processing good ones.
+			db.lo.Error("reading shard", "err", err, "shard", shardYM{
+				shard: m.shard,
+				ym:    vs.partition[item.Partition],
+			})
 		}
+	})
 
-	}
 	return nil
 }
 

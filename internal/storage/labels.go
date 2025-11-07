@@ -2,12 +2,9 @@ package storage
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"slices"
 
-	"github.com/gernest/bsi/internal/bitmaps"
-	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/prometheus/prometheus/model/labels"
@@ -95,48 +92,4 @@ func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(na
 		return nil
 	}
 	return result.MakeSeries(cb)
-}
-
-func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
-		shard := m.shard
-		tsP, ok := records.Get(MetricsTimestamp)
-		if !ok {
-			panic("missing ts root records")
-		}
-		ra, err := readBSIRange(tx, tsP, shard, m.depth.ts, bitmaps.BETWEEN, start, end)
-		if err != nil {
-			return err
-		}
-		if !ra.Any() {
-			return nil
-		}
-
-		kind, ok := records.Get(MetricsType)
-		if !ok {
-			panic("missing metric type root records")
-		}
-		float, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Float), 0)
-		if err != nil {
-			return err
-		}
-		histogram, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Histogram), 0)
-		if err != nil {
-			return err
-		}
-
-		// metric samples can either be histograms or floats.
-		ra = ra.Intersect(float.Union(histogram))
-		if !ra.Any() {
-			return nil
-		}
-
-		ra, err = applyBSIFilters(tx, records, shard, ra, vs.match)
-		if err != nil {
-			return fmt.Errorf("applying filters %w", err)
-		}
-
-		return readSeries(result, m, tx, records, shard, ra)
-	})
-
 }

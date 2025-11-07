@@ -3,6 +3,7 @@ package raw
 import (
 	"math/bits"
 	"slices"
+	"sync"
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/roaring"
@@ -10,6 +11,7 @@ import (
 
 // BSI contains encoded BSI (column, value) tuple,
 type BSI struct {
+	mu     sync.Mutex
 	exists *roaring.Bitmap
 	sign   *roaring.Bitmap
 	data   []*roaring.Bitmap
@@ -53,6 +55,26 @@ func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter
 	return nil
 }
 
+func (b *BSI) Union(o *BSI) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if len(b.data) < len(o.data) {
+		b.data = slices.Grow(b.data, len(o.data))
+	}
+
+	b.exists.UnionInPlace(o.exists)
+	b.sign.UnionInPlace(o.sign)
+
+	for i := range b.data {
+		if b.data[i] == nil {
+			b.data[i] = o.data[i].Clone()
+			continue
+		}
+		b.data[i].UnionInPlace(o.data[i])
+	}
+}
+
 func (b *BSI) Any() bool {
 	return b.exists.Any()
 }
@@ -62,11 +84,12 @@ func (b *BSI) Init() {
 	b.sign = roaring.NewBitmap()
 }
 
-func (b *BSI) Reset() {
+func (b *BSI) Reset() *BSI {
 	b.exists.Containers.Reset()
 	b.sign.Containers.Reset()
 	clear(b.data)
 	b.data = b.data[:0]
+	return b
 }
 
 // Optimize run optimize all bitmaps.
