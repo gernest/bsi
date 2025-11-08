@@ -207,7 +207,11 @@ func (i *Iter) Init(s *series) {
 
 // Reset clears i for reuse.
 func (i *Iter) Reset() {
-	*i = Iter{}
+	i.s = nil
+	i.ts.ID = i.ts.ID[:0]
+	i.ts.Value = i.ts.Value[:0]
+	i.idx = 0
+	i.typ = chunkenc.ValNone
 }
 
 var _ chunkenc.Iterator = (*Iter)(nil)
