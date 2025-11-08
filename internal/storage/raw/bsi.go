@@ -61,13 +61,13 @@ func (b *BSI) Union(o *BSI) {
 	defer b.mu.Unlock()
 
 	if len(b.data) < len(o.data) {
-		b.data = slices.Grow(b.data, len(o.data))
+		b.data = slices.Grow(b.data, len(o.data))[:len(o.data)]
 	}
 
 	b.exists.UnionInPlace(o.exists)
 	b.sign.UnionInPlace(o.sign)
 
-	for i := range b.data {
+	for i := range o.data {
 		if b.data[i] == nil {
 			b.data[i] = o.data[i].Clone()
 			continue
