@@ -104,6 +104,7 @@ func (v *view) IsEmpty() bool {
 }
 
 func (v *view) Reset() *view {
+	v.partition = v.partition[:0]
 	v.meta = v.meta[:0]
 	v.match = v.match[:0]
 	v.matchAny = v.matchAny[:0]
