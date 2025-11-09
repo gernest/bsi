@@ -354,7 +354,7 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 	})
 
 	// Distribute work cross all available cores.
-	w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) {
+	w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) error {
 		m := vs.meta[item.Partition][item.Shard]
 		err := db.partition(vs.partition[item.Partition], m.shard, false, func(tx *rbf.Tx) error {
 			records, err := tx.RootRecords()
@@ -364,13 +364,12 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 			return cb(tx, records, m)
 		})
 		if err != nil {
-			// There is no way to safely propagate errors without complicating logic.
-			// We can log shards with errors and keep on processing good ones.
-			db.lo.Error("reading shard", "err", err, "shard", shardYM{
+			return fmt.Errorf("reading shard=%s %w", shardYM{
 				shard: m.shard,
 				ym:    vs.partition[item.Partition],
-			})
+			}, err)
 		}
+		return nil
 	})
 
 	return nil

@@ -1,6 +1,7 @@
 package work
 
 import (
+	"errors"
 	"iter"
 	"slices"
 	"sync"
@@ -24,24 +25,46 @@ func (w *Work[T]) Reset() *Work[T] {
 	return w
 }
 
-func (w *Work[T]) Do(n int, f func(item T)) {
+// Do executes f in n possible goroutines. We stop execution whn we first encounter an error.
+func (w *Work[T]) Do(n int, f func(item T) error) error {
 	if n < 1 {
 		panic("work.Do: n < 1")
+	}
+	var mu sync.RWMutex
+	var errs []error
+	do := func(a []T) {
+		mu.RLock()
+		sz := len(errs)
+		mu.RUnlock()
+		if sz > 0 {
+			return
+		}
+		for i := range a {
+			err := f(a[i])
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+				return
+			}
+		}
 	}
 
 	var g sync.WaitGroup
 
 	for work := range slices.Chunk(w.todo, n) {
 		g.Add(1)
-		go w.do(&g, work, f)
+		go w.do(&g, work, do)
 	}
 	g.Wait()
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
 }
 
-func (w *Work[T]) do(g *sync.WaitGroup, all []T, f func(T)) {
+func (w *Work[T]) do(g *sync.WaitGroup, all []T, f func([]T)) {
 	defer g.Done()
 
-	for i := range all {
-		f(all[i])
-	}
+	f(all)
 }
