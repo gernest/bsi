@@ -96,7 +96,7 @@ type row struct {
 }
 
 func (v *row) Depth() uint8 {
-	return uint8(bits.Len64(max(uint64(v.predicate), uint64(v.end))))
+	return uint8(bits.Len64(max(uint64(v.predicate), uint64(v.end)))) + 1
 }
 
 func (v *view) IsEmpty() bool {
