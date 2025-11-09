@@ -8,7 +8,7 @@ the following core features.
 - **Fast and efficient**
 - **Permanent storage**
 - **Fully promql compliant**
-- **High cardinality**
+- **Designed for high cardinality**
 
 With BSI there is no need for third party remote storage, a single prometheus instance 
 can handle up to 1 million active timeseries without being OOM killed.
