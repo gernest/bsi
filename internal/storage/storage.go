@@ -153,8 +153,7 @@ func (db *Store) AddRows(rows *Rows) error {
 
 	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
 		shard := se.Lo / shardwidth.ShardWidth
-		offset := start + int(se.Hi-se.Lo) - 1
-
+		offset := start + int(se.Hi-se.Lo)
 		for i := range offset - start {
 			if rows.Kind[i] == None {
 				continue
