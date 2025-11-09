@@ -230,7 +230,7 @@ func (s *meta) SetFull(id uint64) {
 }
 
 func (s *meta) InRange(lo, hi int64) bool {
-	return lo < s.max && hi > s.min
+	return lo <= s.max && hi >= s.min
 }
 
 func (s *meta) Update(other *meta) {
@@ -254,7 +254,7 @@ func (s *data) Index(id uint64, value tsid.ID) {
 		bitmaps.BSI(s.get(value[i].ID), id, int64(value[i].Value))
 	}
 	depth := uint8(bits.Len64(uint64(value[0].Value))) + 1
-	s.meta.depth.label = max(s.meta.depth.ts, depth)
+	s.meta.depth.label = max(s.meta.depth.label, depth)
 }
 
 func (s *data) Timestamp(id uint64, value int64) {
@@ -274,14 +274,14 @@ func (s *data) Value(id uint64, value uint64) {
 	ra := s.get(MetricsValue)
 	bitmaps.BSI(ra, id, int64(value))
 	depth := uint8(bits.Len64(uint64(value))) + 1
-	s.meta.depth.value = max(s.meta.depth.ts, depth)
+	s.meta.depth.value = max(s.meta.depth.value, depth)
 }
 
 func (s *data) Kind(id uint64, value Kind) {
 	ra := s.get(MetricsType)
 	bitmaps.BSI(ra, id, int64(value))
 	depth := uint8(bits.Len64(uint64(value))) + 1
-	s.meta.depth.kind = max(s.meta.depth.ts, depth)
+	s.meta.depth.kind = max(s.meta.depth.kind, depth)
 }
 
 func (s *data) get(col uint64) *roaring.Bitmap {
