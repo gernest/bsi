@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sync"
 
+	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/raw"
 	"github.com/gernest/roaring"
@@ -21,6 +21,21 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+var histogramPool = pools.Pool[*prompb.Histogram]{Init: histogramItems{}}
+
+type histogramItems struct{}
+
+var _ pools.Items[*prompb.Histogram] = (*histogramItems)(nil)
+
+func (histogramItems) Init() *prompb.Histogram {
+	return new(prompb.Histogram)
+}
+
+func (histogramItems) Reset(v *prompb.Histogram) *prompb.Histogram {
+	v.Reset()
+	return v
+}
 
 // Samples is a full representation of samples in memory.
 type Samples struct {
@@ -254,16 +269,13 @@ func (i *Iter) At() (int64, float64) {
 	return int64(ts), math.Float64frombits(v)
 }
 
-var histogramPool = &sync.Pool{New: func() any { return new(prompb.Histogram) }}
-
 // AtHistogram implements chunkenc.Iterator.
 func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	ts := i.ts.Value[i.idx]
 	v, _ := i.s.s.ValuesBSI.GetValue(i.ts.ID[i.idx])
-	h := histogramPool.Get().(*prompb.Histogram)
+	h := histogramPool.Get()
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToIntHistogram()
-	h.Reset()
 	histogramPool.Put(h)
 	return int64(ts), r
 }
@@ -272,10 +284,9 @@ func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	ts := i.ts.Value[i.idx]
 	v, _ := i.s.s.ValuesBSI.GetValue(i.ts.ID[i.idx])
-	h := histogramPool.Get().(*prompb.Histogram)
+	h := histogramPool.Get()
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToFloatHistogram()
-	h.Reset()
 	histogramPool.Put(h)
 	return int64(ts), r
 }

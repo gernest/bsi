@@ -24,6 +24,7 @@ func WrapLabel(data []byte) labels.Labels {
 	return *(*labels.Labels)(unsafe.Pointer(&lo))
 }
 
+// RangeLabels iterates over labels.Labels without allocation. Yields name and value.
 func RangeLabels(data []byte) iter.Seq2[[]byte, []byte] {
 	return func(yield func([]byte, []byte) bool) {
 		var name, value []byte
