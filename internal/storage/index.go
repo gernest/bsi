@@ -98,9 +98,13 @@ func (m *match) Column() uint64 {
 type row struct {
 	predicate int64
 	end       int64
+	depth     uint8
 }
 
 func (v *row) Depth() uint8 {
+	if v.depth != 0 {
+		return v.depth
+	}
 	return uint8(bits.Len64(max(uint64(v.predicate), uint64(v.end)))) + 1
 }
 
