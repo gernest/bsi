@@ -11,10 +11,10 @@ import (
 
 // BSI contains encoded BSI (column, value) tuple,
 type BSI struct {
-	mu     sync.Mutex
 	exists *roaring.Bitmap
 	sign   *roaring.Bitmap
 	data   []*roaring.Bitmap
+	mu     sync.Mutex
 }
 
 // From converts rbf BSI data into b for the given filter columns.

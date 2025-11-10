@@ -86,26 +86,14 @@ type view struct {
 }
 
 type match struct {
-	rows   []row
 	column string
+	rows   []uint64
+	depth  uint8
 	op     bitmaps.OP
 }
 
 func (m *match) Column() uint64 {
 	return xxhash.Sum64String(m.column)
-}
-
-type row struct {
-	predicate int64
-	end       int64
-	depth     uint8
-}
-
-func (v *row) Depth() uint8 {
-	if v.depth != 0 {
-		return v.depth
-	}
-	return uint8(bits.Len64(max(uint64(v.predicate), uint64(v.end)))) + 1
 }
 
 func (v *view) IsEmpty() bool {

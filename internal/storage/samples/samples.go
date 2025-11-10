@@ -27,11 +27,11 @@ type Samples struct {
 	Series     map[uint64]*roaring.Bitmap
 	SeriesData map[uint64][]byte
 	Data       map[uint64][]byte
+	ls         []uint64
 	KindBSI    raw.BSI
 	LabelsBSI  raw.BSI
 	TsBSI      raw.BSI
 	ValuesBSI  raw.BSI
-	ls         []uint64
 	active     uint64
 }
 

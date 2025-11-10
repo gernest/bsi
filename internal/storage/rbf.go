@@ -56,7 +56,7 @@ func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roa
 	for i := range matchers {
 		m := &matchers[i]
 		// handle special cases
-		if len(m.rows) == 0 || (len(m.rows) == 1 && m.rows[0].predicate == 0) {
+		if len(m.rows) == 0 || (len(m.rows) == 1 && m.rows[0] == 0) {
 			switch m.op {
 			case bitmaps.EQ:
 				// resets all filters: we will never find suitable columns again.
@@ -86,16 +86,14 @@ func readBSIFilter(tx *rbf.Tx, records *rbf.Records, shard uint64, match *match)
 		return nil, fmt.Errorf("missing root record for column %s", match.column)
 	}
 	if len(match.rows) == 1 {
-		va := &match.rows[0]
-		return readBSIRange(tx, root, shard, va.Depth(), match.op, va.predicate, va.end)
+		return readBSIRange(tx, root, shard, match.depth, match.op, int64(match.rows[0]), 0)
 	}
 
 	// multiple values in the same search are treated as union.
 	all := make([]*roaring.Bitmap, len(match.rows))
 	var err error
 	for i := range match.rows {
-		va := &match.rows[i]
-		all[i], err = readBSIRange(tx, root, shard, va.Depth(), match.op, va.predicate, va.end)
+		all[i], err = readBSIRange(tx, root, shard, match.depth, match.op, int64(match.rows[i]), 0)
 		if err != nil {
 			return nil, err
 		}

@@ -84,45 +84,42 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 					if value != nil {
 						va = binary.BigEndian.Uint64(value)
 					}
-					if op == bitmaps.NEQ {
-						depth = uint8(bits.Len64(mb.Sequence())) + 1
-					}
+					depth = uint8(bits.Len64(mb.Sequence())) + 1
 				}
 
 				ma := match{
 					column: string(b),
-					rows: []row{
-						{predicate: int64(va), depth: depth},
-					},
-					op: op,
+					rows:   []uint64{va},
+					depth:  depth,
+					op:     op,
 				}
 				if !yield(ma) {
 					return
 				}
 			case labels.MatchRegexp, labels.MatchNotRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
-				values := make([]row, 0, 64)
+				values := make([]uint64, 0, 64)
 				op := bitmaps.EQ
 				if m.Type == labels.MatchNotRegexp {
 					op = bitmaps.NEQ
 				}
+				var depth uint8
+
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
-					var depth uint8
-					if op == bitmaps.NEQ {
-						depth = uint8(bits.Len64(mb.Sequence())) + 1
-					}
+					depth = uint8(bits.Len64(mb.Sequence())) + 1
 					prefix := magic.Slice(m.Prefix())
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix) && m.Matches(magic.String(a)); a, b = mc.Next() {
 						va := binary.BigEndian.Uint64(b)
-						values = append(values, row{predicate: int64(va), depth: depth})
+						values = append(values, va)
 					}
 				}
 
 				ma := match{
 					column: string(b),
 					rows:   values,
+					depth:  depth,
 					op:     op,
 				}
 				if !yield(ma) {
