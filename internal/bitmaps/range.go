@@ -27,6 +27,27 @@ const (
 	BETWEEN // ><  (this is like predicate <= x <= end)
 )
 
+func (o OP) String() string {
+	switch o {
+	case EQ:
+		return "=="
+	case NEQ:
+		return "!="
+	case LT:
+		return "<"
+	case LTE:
+		return "<="
+	case GT:
+		return ">"
+	case GTE:
+		return ">="
+	case BETWEEN:
+		return "<=>"
+	default:
+		return "unknown"
+	}
+}
+
 // OffsetRanger is an interface for reading [roaring.Bitmap] with keys constraints.
 type OffsetRanger interface {
 	// OffsetRange returns a *roaring.Bitmap containing the portion of the Bitmap for the fragment
