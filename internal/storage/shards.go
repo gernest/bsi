@@ -72,7 +72,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			case labels.MatchEqual, labels.MatchNotEqual:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				var va uint64
-				if !bytes.Equal(b, magic.Slice(m.Name)) {
+				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
 					if value != nil {
@@ -96,8 +96,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			case labels.MatchRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				values := make([]row, 0, 64)
-
-				if !bytes.Equal(b, magic.Slice(m.Name)) {
+				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
 					prefix := magic.Slice(m.Prefix())

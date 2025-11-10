@@ -54,7 +54,7 @@ func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *
 
 func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers []match) (*roaring.Bitmap, error) {
 	for i := range matchers {
-		m := &matchers[0]
+		m := &matchers[i]
 		// handle special cases
 		if len(m.rows) == 0 || (len(m.rows) == 1 && m.rows[0].predicate == 0) {
 			switch m.op {
@@ -65,10 +65,10 @@ func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roa
 				// same as matching existing bitmap
 				continue
 			default:
-				panic(fmt.Sprintf("unexpected operation for col=%s op=%s", m.column, m.op))
+				panic(fmt.Sprintf("unexpected operation %s for col=%s ", m.op, m.column))
 			}
 		}
-		rx, err := readBSIFilter(tx, records, shard, &matchers[i])
+		rx, err := readBSIFilter(tx, records, shard, m)
 		if err != nil {
 			return nil, err
 		}
