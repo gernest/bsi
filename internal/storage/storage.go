@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/seq"
@@ -20,7 +21,20 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var tsidPool tsid.Pool
+var tsidPool = pools.Pool[*tsid.B]{Init: tsidItems{}}
+
+type tsidItems struct{}
+
+var _ pools.Items[*tsid.B] = (*tsidItems)(nil)
+
+func (tsidItems) Init() *tsid.B {
+	return &tsid.B{B: make([]tsid.ID, 0, 1<<10)}
+}
+
+func (tsidItems) Reset(v *tsid.B) *tsid.B {
+	v.B = v.B[:0]
+	return v
+}
 
 // Store implements timeseries database.
 type Store struct {

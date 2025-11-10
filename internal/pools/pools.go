@@ -2,13 +2,13 @@ package pools
 
 import "sync"
 
-type PooledItem[T any] interface {
+type Items[T any] interface {
 	Init() T
 	Reset(T) T
 }
 
 type Pool[T any] struct {
-	Init PooledItem[T]
+	Init Items[T]
 	base sync.Pool
 }
 

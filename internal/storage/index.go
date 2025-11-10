@@ -35,7 +35,7 @@ func (viewsItems) Init() *view { return new(view) }
 
 func (viewsItems) Reset(v *view) *view { return v.Reset() }
 
-var _ pools.PooledItem[*view] = (*viewsItems)(nil)
+var _ pools.Items[*view] = (*viewsItems)(nil)
 
 type partitionShard struct {
 	Partition uint16
@@ -54,7 +54,7 @@ func (workItems) Reset(v *partitionShardWork) *partitionShardWork {
 	return v.Reset()
 }
 
-var _ pools.PooledItem[*partitionShardWork] = (*workItems)(nil)
+var _ pools.Items[*partitionShardWork] = (*workItems)(nil)
 
 // view is like a posting list with all shards that might contain data. This also
 // contains translation of label matchers which is shard agnostic.

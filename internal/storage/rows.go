@@ -14,7 +14,7 @@ type RowsItem struct{}
 func (RowsItem) Init() *Rows         { return new(Rows) }
 func (RowsItem) Reset(v *Rows) *Rows { return v.Reset() }
 
-var _ pools.PooledItem[*Rows] = (*RowsItem)(nil)
+var _ pools.Items[*Rows] = (*RowsItem)(nil)
 
 // Rows is an in memory batch of metrics belonging to a single view.
 type Rows struct {
