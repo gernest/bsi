@@ -13,7 +13,6 @@ require (
 	github.com/felixge/fgprof v0.9.5
 	github.com/gernest/roaring v0.30.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/minio/minlz v1.0.1
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.2.0
 	github.com/oklog/ulid/v2 v2.1.1
