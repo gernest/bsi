@@ -16,13 +16,6 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps
 	return bitmaps.Range(cu, op, shard, uint64(depth), predicate, end)
 }
 
-func readBSIMax(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap) (uint64, error) {
-	cu := tx.CursorFromRoot(root)
-	defer cu.Close()
-
-	return bitmaps.MaxUnsigned(cu, shard, depth, filter)
-}
-
 func readRaw(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap, result *raw.BSI) error {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
