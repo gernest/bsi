@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
@@ -86,8 +87,12 @@ type view struct {
 
 type match struct {
 	rows   []row
-	column uint64
+	column string
 	op     bitmaps.OP
+}
+
+func (m *match) Column() uint64 {
+	return xxhash.Sum64String(m.column)
 }
 
 type row struct {
