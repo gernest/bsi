@@ -351,7 +351,7 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 	})
 
 	// Distribute work cross all available cores.
-	w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) error {
+	return w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) error {
 		m := vs.meta[item.Partition][item.Shard]
 		err := db.partition(vs.partition[item.Partition], m.shard, false, func(tx *rbf.Tx) error {
 			records, err := tx.RootRecords()
@@ -368,8 +368,6 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 		}
 		return nil
 	})
-
-	return nil
 }
 
 // walkPartitions iterates over all partitions within the lo and hi range. his is inclusive because we
