@@ -136,24 +136,13 @@ func (db *Store) translate(result *samples.Samples) error {
 }
 
 func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
-	ts := rawBSIPool.Get()
-	kinds := rawBSIPool.Get()
-	labels := rawBSIPool.Get()
-	values := rawBSIPool.Get()
-
-	defer func() {
-		rawBSIPool.Put(ts)
-		rawBSIPool.Put(kinds)
-		rawBSIPool.Put(labels)
-		rawBSIPool.Put(values)
-	}()
 
 	{
 		root, ok := records.Get(MetricsTimestamp)
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.ts, match, ts)
+		err := readRaw(tx, root, shard, meta.depth.ts, match, &result.TsBSI)
 		if err != nil {
 			return fmt.Errorf("reading timestamp %w", err)
 		}
@@ -163,7 +152,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.kind, match, kinds)
+		err := readRaw(tx, root, shard, meta.depth.kind, match, &result.KindBSI)
 		if err != nil {
 			return fmt.Errorf("reading metric type %w", err)
 		}
@@ -173,7 +162,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.label, match, labels)
+		err := readRaw(tx, root, shard, meta.depth.label, match, &result.LabelsBSI)
 		if err != nil {
 			return fmt.Errorf("reading labels %w", err)
 		}
@@ -183,57 +172,35 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.value, match, values)
+		err := readRaw(tx, root, shard, meta.depth.value, match, &result.ValuesBSI)
 		if err != nil {
 			return fmt.Errorf("reading values %w", err)
 		}
 	}
 
-	// everything was properly read. We update the samples now.
-	result.TsBSI.Union(ts)
-	result.KindBSI.Union(kinds)
-	result.LabelsBSI.Union(labels)
-	result.ValuesBSI.Union(values)
 	return nil
 }
 
 func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
-
-	// to avoid samples being in an incomplete state, we first read inti temporary bsi and update samples
-	// wen we are done.
-	labels := rawBSIPool.Get()
-	defer rawBSIPool.Put(labels)
-
 	root, ok := records.Get(MetricsLabels)
 	if !ok {
 		return fmt.Errorf("missing labels root record")
 	}
-	err := readRaw(tx, root, shard, meta.depth.label, match, labels)
+	err := readRaw(tx, root, shard, meta.depth.label, match, &result.LabelsBSI)
 	if err != nil {
 		return fmt.Errorf("reading labels %w", err)
 	}
-	result.LabelsBSI.Union(labels)
 	return nil
 }
 
 func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
-
-	kinds := rawBSIPool.Get()
-	labels := rawBSIPool.Get()
-	values := rawBSIPool.Get()
-
-	defer func() {
-		rawBSIPool.Put(kinds)
-		rawBSIPool.Put(labels)
-		rawBSIPool.Put(values)
-	}()
 
 	{
 		root, ok := records.Get(MetricsType)
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.kind, match, kinds)
+		err := readRaw(tx, root, shard, meta.depth.kind, match, &result.KindBSI)
 		if err != nil {
 			return fmt.Errorf("reading metric type %w", err)
 		}
@@ -243,7 +210,7 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.label, match, labels)
+		err := readRaw(tx, root, shard, meta.depth.label, match, &result.LabelsBSI)
 		if err != nil {
 			return fmt.Errorf("reading labels %w", err)
 		}
@@ -253,13 +220,10 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
-		err := readRaw(tx, root, shard, meta.depth.value, match, values)
+		err := readRaw(tx, root, shard, meta.depth.value, match, &result.ValuesBSI)
 		if err != nil {
 			return fmt.Errorf("reading values %w", err)
 		}
 	}
-	result.KindBSI.Union(kinds)
-	result.LabelsBSI.Union(labels)
-	result.ValuesBSI.Union(values)
 	return nil
 }

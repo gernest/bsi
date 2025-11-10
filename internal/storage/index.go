@@ -17,7 +17,6 @@ import (
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/raw"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/bsi/internal/storage/work"
@@ -27,21 +26,8 @@ import (
 )
 
 var (
-	workPool   = pools.Pool[*partitionShardWork]{Init: workItems{}}
-	rawBSIPool = pools.Pool[*raw.BSI]{Init: bsiItems{}}
+	workPool = pools.Pool[*partitionShardWork]{Init: workItems{}}
 )
-
-type bsiItems struct{}
-
-func (bsiItems) Init() *raw.BSI {
-	b := new(raw.BSI)
-	b.Init()
-	return b
-}
-
-func (bsiItems) Reset(v *raw.BSI) *raw.BSI { return v.Reset() }
-
-var _ pools.PooledItem[*raw.BSI] = (*bsiItems)(nil)
 
 type viewsItems struct{}
 

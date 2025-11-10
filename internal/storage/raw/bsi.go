@@ -19,6 +19,9 @@ type BSI struct {
 
 // From converts rbf BSI data into b for the given filter columns.
 func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter *roaring.Bitmap) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	exists, err := bitmaps.Row(tx, shard, 0)
 	if err != nil {
 		return err
@@ -32,11 +35,9 @@ func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter
 		return err
 	}
 	sign = sign.Intersect(exists)
-
 	if len(b.data) < int(bitDepth) {
 		b.data = slices.Grow(b.data, int(bitDepth))[:bitDepth]
 	}
-
 	for i := range uint64(bitDepth) {
 		bits, err := bitmaps.Row(tx, shard, 2+i)
 		if err != nil {
@@ -45,35 +46,14 @@ func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter
 		bits = bits.Intersect(exists).Clone()
 
 		if b.data[i] != nil {
-			b.data[i].UnionInPlace(bits)
+			b.data[i] = b.data[i].Union(bits)
 			continue
 		}
 		b.data[i] = bits
 	}
-	b.exists.UnionInPlace(exists.Clone())
-	b.sign.UnionInPlace(sign.Clone())
+	b.exists = b.exists.Union(exists.Clone())
+	b.sign = b.sign.Union(sign.Clone())
 	return nil
-}
-
-// Union performs b or o and writes results in b.
-func (b *BSI) Union(o *BSI) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if len(b.data) < len(o.data) {
-		b.data = slices.Grow(b.data, len(o.data))[:len(o.data)]
-	}
-
-	b.exists.UnionInPlace(o.exists)
-	b.sign.UnionInPlace(o.sign)
-
-	for i := range o.data {
-		if b.data[i] == nil {
-			b.data[i] = o.data[i].Clone()
-			continue
-		}
-		b.data[i].UnionInPlace(o.data[i])
-	}
 }
 
 // Any returns true if there is any values in b.
