@@ -2,7 +2,9 @@ package work
 
 import (
 	"iter"
+	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // Work manages a set of work items to be executed in parallel, at most once each.
@@ -18,6 +20,7 @@ func (w *Work[T]) Init(todo iter.Seq[T]) {
 	}
 }
 
+// Reset clears w for reuse.
 func (w *Work[T]) Reset() *Work[T] {
 	w.todo = w.todo[:0]
 	return w
@@ -25,13 +28,33 @@ func (w *Work[T]) Reset() *Work[T] {
 
 // Do executes f in n possible goroutines. We stop execution whn we first encounter an error.
 func (w *Work[T]) Do(n int, f func(item T) error) error {
-	// we do sequential scan for now.
-	// TODO: concurrent processing once promql tests pass.
 	for i := range w.todo {
 		err := f(w.todo[i])
 		if err != nil {
 			return err
 		}
+	}
+	var err atomic.Value
+	do := func(all []T) {
+		for i := range all {
+			if err.Load() != nil {
+				return
+			}
+			e := f(all[i])
+			if e != nil {
+				err.Store(e)
+				return
+			}
+		}
+	}
+	var wg sync.WaitGroup
+	for data := range slices.Chunk(w.todo, n) {
+		wg.Add(1)
+		go w.do(&wg, data, do)
+	}
+	wg.Wait()
+	if v := err.Load(); v != nil {
+		return v.(error)
 	}
 	return nil
 }
