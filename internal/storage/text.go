@@ -109,8 +109,8 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 						Value: nxt,
 					})
 				}
-				out.B[i] = id
 			}
+			out.B[i] = id
 
 			// 2. store checksum => tsid in checksums bucket
 			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](id))
