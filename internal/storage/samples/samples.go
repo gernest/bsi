@@ -180,10 +180,6 @@ type series struct {
 
 var _ storage.Series = (*series)(nil)
 
-func (s *series) Release() {
-	s.s = nil
-}
-
 // Labels implements storage.Series.
 func (s *series) Labels() labels.Labels {
 	return buffer.WrapLabel(s.s.SeriesData[s.id]).Copy()
@@ -235,7 +231,6 @@ var _ chunkenc.Iterator = (*Iter)(nil)
 func (i *Iter) Next() chunkenc.ValueType {
 	i.idx++
 	if i.idx >= i.ts.Len() {
-		i.s.Release()
 		i.s = nil
 		i.typ = chunkenc.ValNone
 		return i.typ
