@@ -147,9 +147,11 @@ func (w *appender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64
 	var hs prompb.Histogram
 	if h != nil {
 		hs = prompb.FromIntHistogram(t, h)
+		hs.CustomValues = h.CustomValues
 	}
 	if fh != nil {
 		hs = prompb.FromFloatHistogram(t, fh)
+		hs.CustomValues = fh.CustomValues
 	}
 	data, _ := hs.Marshal()
 	w.set.AppendHistogram(l, t, data, fh != nil)
