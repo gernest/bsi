@@ -28,35 +28,42 @@ func (w *Work[T]) Reset() *Work[T] {
 
 // Do executes f in n possible goroutines. We stop execution whn we first encounter an error.
 func (w *Work[T]) Do(n int, f func(item T) error) error {
-	for i := range w.todo {
-		err := f(w.todo[i])
-		if err != nil {
-			return err
-		}
-	}
-	var err atomic.Value
+
+	var (
+		err    error
+		cancel atomic.Bool
+		once   sync.Once
+	)
+
 	do := func(all []T) {
 		for i := range all {
-			if err.Load() != nil {
+			if cancel.Load() {
 				return
 			}
 			e := f(all[i])
-			if e != nil {
-				err.Store(e)
-				return
-			}
+			once.Do(func() {
+				err = e
+				cancel.Store(true)
+			})
 		}
 	}
 	var wg sync.WaitGroup
+	// each shard covers a limited number of records, we expect large queries to cover
+	// shards exceeding available cores.
+	//
+	// Here we only spin n goroutines and distribute shards across these goroutines. Each
+	// goroutine process chunks sequentially.
+	// When a shard processing call returns an error the execution is stopped and no new tasks
+	// are executed.
+	// There is no way to stop already executing tasks when an error occur, so we will wait for existing tasks
+	// ti complete. Only the first error is recorded and returned.
+	// The caller must discard any state if returned err is not nil.
 	for data := range slices.Chunk(w.todo, n) {
 		wg.Add(1)
 		go w.do(&wg, data, do)
 	}
 	wg.Wait()
-	if v := err.Load(); v != nil {
-		return v.(error)
-	}
-	return nil
+	return err
 }
 
 func (w *Work[T]) do(g *sync.WaitGroup, all []T, f func([]T)) {

@@ -17,8 +17,9 @@ var src string
 
 func TestPromql(t *testing.T) {
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
+	parser.ExperimentalDurationExpr = true
 	promqltest.RunTestWithStorage(t, src, newTestEngine(t), newStorage)
-
 }
 
 func newTestEngine(t *testing.T) *promql.Engine {
