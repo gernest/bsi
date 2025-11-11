@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"math/bits"
 	"path/filepath"
 	"runtime"
@@ -169,6 +170,8 @@ func (s batch) Get(shard uint64) *data {
 	if !ok {
 		r = &data{columns: make(map[uint64]*roaring.Bitmap)}
 		r.meta.shard = shard
+		r.meta.min = math.MaxInt64
+		r.meta.max = math.MinInt64
 		s[shard] = r
 	}
 	return r
@@ -217,9 +220,6 @@ func (s *meta) InRange(lo, hi int64) bool {
 }
 
 func (s *meta) Update(other *meta) {
-	if s.min == 0 {
-		s.min = other.min
-	}
 	s.min = min(s.min, other.min)
 	s.max = max(s.max, other.max)
 	s.depth.ts = max(s.depth.ts, other.depth.ts)
@@ -243,11 +243,7 @@ func (s *data) Index(id uint64, value tsid.ID) {
 func (s *data) Timestamp(id uint64, value int64) {
 	ra := s.get(MetricsTimestamp)
 	bitmaps.BSI(ra, id, value)
-	if s.meta.min == 0 {
-		s.meta.min = value
-	} else {
-		s.meta.min = min(s.meta.min, value)
-	}
+	s.meta.min = min(s.meta.min, value)
 	s.meta.max = max(s.meta.max, value)
 	depth := uint8(bits.Len64(uint64(value))) + 1
 	s.meta.depth.ts = max(s.meta.depth.ts, depth)
