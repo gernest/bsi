@@ -3,11 +3,12 @@ package storage
 import (
 	"bytes"
 	"cmp"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -190,17 +191,17 @@ type meta struct {
 }
 
 func (m *meta) Get(col uint64) uint8 {
-	i := sort.Search(len(m.depth), func(i int) bool {
-		return m.depth[i].col < col
+	i, ok := slices.BinarySearchFunc(m.depth, bounds{col: col}, func(i, j bounds) int {
+		return cmp.Compare(i.col, j.col)
 	})
-	if i < len(m.depth) && m.depth[i].col == col {
+	if ok {
 		return m.depth[i].minMax.depth()
 	}
 	return 0
 }
 
 func (s *data) Index(id uint64, value tsid.ID) {
-	for i := 1; i < len(value); i++ {
+	for i := range value {
 		s.add(value[i].ID, id, int64(value[i].Value))
 	}
 }
@@ -335,8 +336,12 @@ func walkPartitions(tx *bbolt.Tx, lo, hi yyyyMM, cb func(key yyyyMM, m meta) err
 		if err != nil {
 			return err
 		}
-		err = adminB.Bucket(a).ForEach(func(_, v []byte) error {
-			return cb(ym, magic.ReinterpretSlice[meta](v)[0])
+		err = adminB.Bucket(a).ForEach(func(k, v []byte) error {
+			o := magic.ReinterpretSlice[bounds](v)
+			return cb(ym, meta{
+				shard: binary.BigEndian.Uint64(k),
+				depth: slices.Clone(o),
+			})
 		})
 		if err != nil {
 			return err
