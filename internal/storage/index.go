@@ -216,7 +216,7 @@ func (s *meta) SetFull(id uint64) {
 }
 
 func (s *meta) InRange(lo, hi int64) bool {
-	return lo <= s.max && hi >= s.min
+	return s.min <= hi && lo <= s.max
 }
 
 func (s *meta) Update(other *meta) {
