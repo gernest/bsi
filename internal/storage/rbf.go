@@ -16,6 +16,13 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps
 	return bitmaps.Range(cu, op, shard, uint64(depth), predicate, end)
 }
 
+func readBSIExists(tx *rbf.Tx, root uint32, shard uint64, depth uint8) (*roaring.Bitmap, error) {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	return bitmaps.Row(cu, shard, 0)
+}
+
 func readRaw(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring.Bitmap, result *raw.BSI) error {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
@@ -55,14 +62,28 @@ func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *
 func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, shard uint64, filter *roaring.Bitmap, matchers []match) (*roaring.Bitmap, error) {
 	for i := range matchers {
 		m := &matchers[i]
-		// handle special cases
+
 		if len(m.rows) == 0 || (len(m.rows) == 1 && m.rows[0] == 0) {
 			switch m.op {
 			case bitmaps.EQ:
-				// resets all filters: we will never find suitable columns again.
+				if m.depth == 0 {
+					// like prometheus: m.column is not present at all, so we accept
+					// filter as is.
+					continue
+				}
 				return roaring.NewBitmap(), nil
 			case bitmaps.NEQ:
-				// same as matching existing bitmap
+				if m.depth != 0 {
+					// select all existence bits for the column
+					rx, err := readBSIFilterExists(tx, records, shard, m)
+					if err != nil {
+						return nil, err
+					}
+					filter = filter.Intersect(rx)
+					if !filter.Any() {
+						return filter, nil
+					}
+				}
 				continue
 			default:
 				panic(fmt.Sprintf("unexpected operation %s for col=%s ", m.op, m.column))
@@ -99,4 +120,12 @@ func readBSIFilter(tx *rbf.Tx, records *rbf.Records, shard uint64, match *match)
 		}
 	}
 	return all[0].Union(all[1:]...), nil
+}
+
+func readBSIFilterExists(tx *rbf.Tx, records *rbf.Records, shard uint64, match *match) (*roaring.Bitmap, error) {
+	root, ok := records.Get(match.Column())
+	if !ok {
+		return nil, fmt.Errorf("missing root record for column %s", match.column)
+	}
+	return readBSIExists(tx, root, shard, match.depth)
 }
