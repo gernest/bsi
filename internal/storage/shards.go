@@ -142,9 +142,6 @@ func findPartitions(tx *bbolt.Tx, start, end int64, vs *view) error {
 			vs.partition = append(vs.partition, key)
 			vs.meta = append(vs.meta, all)
 		}
-		fmt.Println(len(all), vs.IsEmpty())
-
 	}
 	return nil
-
 }
