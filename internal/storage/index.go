@@ -5,10 +5,9 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"math"
-	"math/bits"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +21,6 @@ import (
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/bsi/internal/storage/work"
 	"github.com/gernest/roaring"
-	"github.com/gernest/roaring/shardwidth"
 	"go.etcd.io/bbolt"
 )
 
@@ -75,7 +73,6 @@ type view struct {
 type match struct {
 	column string
 	rows   []uint64
-	depth  uint8
 	op     bitmaps.OP
 }
 
@@ -168,10 +165,10 @@ func (pa partitions) get(shard uint64, ts int64) *data {
 func (s batch) Get(shard uint64) *data {
 	r, ok := s[shard]
 	if !ok {
-		r = &data{columns: make(map[uint64]*roaring.Bitmap)}
-		r.meta.shard = shard
-		r.meta.min = math.MaxInt64
-		r.meta.max = math.MinInt64
+		r = &data{
+			columns: make(map[uint64]*roaring.Bitmap),
+			meta:    make(map[uint64]*minMax),
+		}
 		s[shard] = r
 	}
 	return r
@@ -182,85 +179,55 @@ func (s batch) Get(shard uint64) *data {
 // label names.
 type data struct {
 	columns map[uint64]*roaring.Bitmap
-	meta    meta
+	meta    map[uint64]*minMax
 }
 
 // meta  is in memory metadata about rbf shard.
 type meta struct {
-	// min is the minimum timestamp observed in the shard.
-	min int64
-	// max is the maximum timestamp observed in the shard
-	max int64
-	// shard is the current shard shard for this metadata. A  single shard represent
-	// 1048576 samples.
 	shard uint64
-	// below we store bit depth inside this shard for core columns. This removes
-	// the need to compute depth during reading.
-	depth struct {
-		ts    uint8
-		value uint8
-		kind  uint8
-		label uint8
-	}
-	// true if the shard is full.
-	full bool
+	depth []bounds
+	full  bool
 }
 
-const mask = uint64(shardwidth.ShardWidth - 1)
-
-func (s *meta) SetFull(id uint64) {
-	if s.full {
-		return
+func (m *meta) Get(col uint64) uint8 {
+	i := sort.Search(len(m.depth), func(i int) bool {
+		return m.depth[i].col < col
+	})
+	if i < len(m.depth) && m.depth[i].col == col {
+		return m.depth[i].minMax.depth()
 	}
-	s.full = (id & mask) == 0
-}
-
-func (s *meta) InRange(lo, hi int64) bool {
-	return s.min <= hi && lo <= s.max
-}
-
-func (s *meta) Update(other *meta) {
-	s.min = min(s.min, other.min)
-	s.max = max(s.max, other.max)
-	s.depth.ts = max(s.depth.ts, other.depth.ts)
-	s.depth.value = max(s.depth.value, other.depth.value)
-	s.depth.label = max(s.depth.label, other.depth.label)
-	s.depth.kind = max(s.depth.kind, other.depth.kind)
-	if !s.full {
-		s.full = other.full
-	}
+	return 0
 }
 
 func (s *data) Index(id uint64, value tsid.ID) {
-	bitmaps.BSI(s.get(MetricsLabels), id, int64(value[0].Value))
 	for i := 1; i < len(value); i++ {
-		bitmaps.BSI(s.get(value[i].ID), id, int64(value[i].Value))
+		s.add(value[i].ID, id, int64(value[i].Value))
 	}
-	depth := uint8(bits.Len64(uint64(value[0].Value))) + 1
-	s.meta.depth.label = max(s.meta.depth.label, depth)
 }
 
 func (s *data) Timestamp(id uint64, value int64) {
-	ra := s.get(MetricsTimestamp)
-	bitmaps.BSI(ra, id, value)
-	s.meta.min = min(s.meta.min, value)
-	s.meta.max = max(s.meta.max, value)
-	depth := uint8(bits.Len64(uint64(value))) + 1
-	s.meta.depth.ts = max(s.meta.depth.ts, depth)
+	s.add(MetricsTimestamp, id, value)
 }
 
 func (s *data) Value(id uint64, value uint64) {
-	ra := s.get(MetricsValue)
-	bitmaps.BSI(ra, id, int64(value))
-	depth := uint8(bits.Len64(uint64(value))) + 1
-	s.meta.depth.value = max(s.meta.depth.value, depth)
+	s.add(MetricsValue, id, int64(value))
 }
 
 func (s *data) Kind(id uint64, value Kind) {
-	ra := s.get(MetricsType)
-	bitmaps.BSI(ra, id, int64(value))
-	depth := uint8(bits.Len64(uint64(value))) + 1
-	s.meta.depth.kind = max(s.meta.depth.kind, depth)
+	s.add(MetricsType, id, int64(value))
+}
+
+func (s *data) add(col uint64, id uint64, val int64) {
+	bitmaps.BSI(s.get(col), id, val)
+	x, ok := s.meta[col]
+	if !ok {
+		s.meta[col] = &minMax{
+			min: val,
+			max: val,
+		}
+		return
+	}
+	x.set(val)
 }
 
 func (s *data) get(col uint64) *roaring.Bitmap {
@@ -279,7 +246,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 		if !ok {
 			return errors.New("missing ts root records")
 		}
-		ra, err := readBSIRange(tx, tsP, shard, m.depth.ts, bitmaps.BETWEEN, start, end)
+		ra, err := readBSIRange(tx, tsP, shard, m.Get(MetricsTimestamp), bitmaps.BETWEEN, start, end)
 		if err != nil {
 			return err
 		}
@@ -291,11 +258,11 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 		if !ok {
 			return errors.New("missing metric type root records")
 		}
-		float, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Float), 0)
+		float, err := readBSIRange(tx, kind, shard, m.Get(MetricsType), bitmaps.EQ, int64(Float), 0)
 		if err != nil {
 			return err
 		}
-		histogram, err := readBSIRange(tx, kind, shard, m.depth.kind, bitmaps.EQ, int64(Histogram), 0)
+		histogram, err := readBSIRange(tx, kind, shard, m.Get(MetricsType), bitmaps.EQ, int64(Histogram), 0)
 		if err != nil {
 			return err
 		}
@@ -306,7 +273,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 			return nil
 		}
 
-		ra, err = applyBSIFilters(tx, records, shard, ra, vs.match)
+		ra, err = applyBSIFilters(tx, records, &m, ra, vs.match)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}

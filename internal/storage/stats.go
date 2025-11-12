@@ -16,16 +16,11 @@ func (db *Store) Stats(statsByLabelName string, _ int) (result *tsdb.Stats, err 
 			NumSeries: uint64(dataI.KeyN),
 		}
 
-		adminB := tx.Bucket(admin)
-		cu := adminB.Cursor()
-		if _, v := cu.First(); v != nil {
-			result.MinTime = magic.ReinterpretSlice[meta](v)[0].min
-		}
-		if _, v := cu.Last(); v != nil {
-			result.MaxTime = magic.ReinterpretSlice[meta](v)[0].max
-		}
+		result.MinTime = minimumTs(tx)
+		result.MaxTime = maximumTs(tx)
+
 		indexB := tx.Bucket(search)
-		cu = indexB.Cursor()
+		cu := indexB.Cursor()
 
 		px := &index.PostingsStats{}
 		// we are iterating over buckets

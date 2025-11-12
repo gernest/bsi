@@ -127,27 +127,43 @@ func (db *Store) Close() error {
 // MinTs returns the lowest timestamp currently observed in the database.
 func (db *Store) MinTs() (ts int64, err error) {
 	err = db.txt.View(func(tx *bbolt.Tx) error {
-		adminB := tx.Bucket(admin)
-		_, v := adminB.Cursor().First()
-		if v != nil {
-			ts = magic.ReinterpretSlice[meta](v)[0].min
-		}
+		ts = minimumTs(tx)
 		return nil
 	})
 	return
 }
 
+func minimumTs(tx *bbolt.Tx) int64 {
+	adminB := tx.Bucket(admin)
+	k, _ := adminB.Cursor().First()
+	if k != nil {
+		_, v := adminB.Bucket(k).Cursor().First()
+		if v != nil {
+			return magic.ReinterpretSlice[bounds](v)[0].minMax.min
+		}
+	}
+	return 0
+}
+
 // MaxTs returns the highest timestamp currently observed in the database.
 func (db *Store) MaxTs() (ts int64, err error) {
 	err = db.txt.View(func(tx *bbolt.Tx) error {
-		adminB := tx.Bucket(admin)
-		_, v := adminB.Cursor().Last()
-		if v != nil {
-			ts = magic.ReinterpretSlice[meta](v)[0].max
-		}
+		ts = maximumTs(tx)
 		return nil
 	})
 	return
+}
+
+func maximumTs(tx *bbolt.Tx) int64 {
+	adminB := tx.Bucket(admin)
+	k, _ := adminB.Cursor().Last()
+	if k != nil {
+		_, v := adminB.Bucket(k).Cursor().Last()
+		if v != nil {
+			return magic.ReinterpretSlice[bounds](v)[0].minMax.max
+		}
+	}
+	return 0
 }
 
 // AddRows index and store rows.
@@ -179,7 +195,6 @@ func (db *Store) AddRows(rows *Rows) error {
 			ba.Value(id, rows.Value[idx])
 			ba.Kind(id, rows.Kind[idx])
 			ba.Index(id, ids.B[idx])
-			ba.meta.SetFull(id)
 		}
 
 	}
@@ -212,9 +227,10 @@ func (db *Store) saveMetadata(ma partitions) error {
 			for shard, data := range v {
 				binary.BigEndian.PutUint64(key[:], shard)
 				if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
-					data.meta.Update(&magic.ReinterpretSlice[meta](v)[0])
+					updateBounds(data.meta, v)
 				}
-				err := pa.Put(key[:], magic.ReinterpretSlice[byte]([]meta{data.meta}))
+				out := buildBounds(data.meta)
+				err := pa.Put(key[:], magic.ReinterpretSlice[byte](out))
 				if err != nil {
 					return fmt.Errorf("updating shard=%d view=%s data %w", shard, k, err)
 				}

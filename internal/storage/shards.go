@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"iter"
-	"math/bits"
 	"slices"
 
 	"github.com/gernest/bsi/internal/bitmaps"
@@ -70,19 +69,16 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				if m.Type == labels.MatchNotEqual {
 					op = bitmaps.NEQ
 				}
-				var depth uint8
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
 					if value != nil {
 						va = binary.BigEndian.Uint64(value)
 					}
-					depth = uint8(bits.Len64(mb.Sequence())) + 1
 				}
 				ma := match{
 					column: m.Name,
 					rows:   []uint64{va},
-					depth:  depth,
 					op:     op,
 				}
 				if !yield(ma) {
@@ -92,11 +88,9 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				values := make([]uint64, 0, 64)
 				op := bitmaps.EQ
-				var depth uint8
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
-					depth = uint8(bits.Len64(mb.Sequence())) + 1
 					for a, b := mc.First(); b != nil; a, b = mc.Next() {
 						if m.Matches(magic.String(a)) {
 							va := binary.BigEndian.Uint64(b)
@@ -108,7 +102,6 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				ma := match{
 					column: m.Name,
 					rows:   values,
-					depth:  depth,
 					op:     op,
 				}
 				if !yield(ma) {
@@ -136,10 +129,13 @@ func findPartitions(tx *bbolt.Tx, start, end int64, vs *view) error {
 		var all []meta
 		cu := adminB.Bucket(name).Cursor()
 
-		for _, v := cu.First(); v != nil; _, v = cu.Next() {
-			o := magic.ReinterpretSlice[meta](v)
-			if o[0].InRange(start, end) {
-				all = append(all, o...)
+		for k, v := cu.First(); v != nil; k, v = cu.Next() {
+			o := magic.ReinterpretSlice[bounds](v)
+			if o[0].minMax.InRange(start, end) {
+				all = append(all, meta{
+					shard: binary.BigEndian.Uint64(k),
+					depth: slices.Clone(o),
+				})
 			}
 		}
 		if len(all) > 0 {

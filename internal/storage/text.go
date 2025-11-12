@@ -77,6 +77,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 				return fmt.Errorf("generating metrics sequence %w", err)
 			}
 			id = append(id, tsid.Column{
+				ID:    MetricsLabels,
 				Value: tid,
 			})
 
