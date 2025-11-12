@@ -17,11 +17,13 @@ import (
 //
 // Search is not concurrent. Returned series is always sorted.
 func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	shards, err := db.findShards(hints.Start, hints.End, matchers)
+	shards := shardsPool.Get()
+	defer shardsPool.Put(shards)
+
+	err := db.findShards(shards, hints.Start, hints.End, matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	defer shardsPool.Put(shards)
 
 	if shards.IsEmpty() {
 		return storage.EmptySeriesSet()

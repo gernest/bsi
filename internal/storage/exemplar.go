@@ -12,11 +12,12 @@ import (
 
 // SelectExemplar implements storage.ExemplarQuerier.
 func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	shards, err := db.findShardsAmy(start, end, matchers)
+	shards := shardsPool.Get()
+	defer shardsPool.Put(shards)
+	err := db.findShardsAmy(shards, start, end, matchers)
 	if err != nil {
 		return nil, err
 	}
-	defer shardsPool.Put(shards)
 
 	var result samples.Samples
 	result.Init()

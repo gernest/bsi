@@ -19,10 +19,10 @@ var shardsPool = pools.Pool[*view]{Init: viewsItems{}}
 
 // Search for all shards that have timestamps within the start and end range. To avoid opeting
 // another database transaction, we also decode matchers for searching in our RBF storage.
-func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *view, err error) {
+func (db *Store) findShards(vs *view, start, end int64, matchers []*labels.Matcher) (err error) {
 	vs = shardsPool.Get()
 
-	err = db.txt.View(func(tx *bbolt.Tx) error {
+	return db.txt.View(func(tx *bbolt.Tx) error {
 		err := findPartitions(tx, start, end, vs)
 		if err != nil {
 			return err
@@ -33,16 +33,13 @@ func (db *Store) findShards(start, end int64, matchers []*labels.Matcher) (vs *v
 		vs.match = slices.Collect(find(tx, matchers))
 		return nil
 	})
-	if err != nil {
-		shardsPool.Put(vs)
-	}
-	return
+
 }
 
-func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (vs *view, err error) {
+func (db *Store) findShardsAmy(vs *view, start, end int64, matchers [][]*labels.Matcher) (err error) {
 	vs = shardsPool.Get()
 
-	err = db.txt.View(func(tx *bbolt.Tx) error {
+	return db.txt.View(func(tx *bbolt.Tx) error {
 		err := findPartitions(tx, start, end, vs)
 		if err != nil {
 			return err
@@ -55,10 +52,6 @@ func (db *Store) findShardsAmy(start, end int64, matchers [][]*labels.Matcher) (
 		}
 		return nil
 	})
-	if err != nil {
-		shardsPool.Put(vs)
-	}
-	return
 }
 
 func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
