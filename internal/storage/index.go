@@ -1,13 +1,10 @@
 package storage
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,12 +14,10 @@ import (
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/bsi/internal/storage/work"
 	"github.com/gernest/roaring"
-	"go.etcd.io/bbolt"
 )
 
 var (
@@ -62,8 +57,7 @@ var _ pools.Items[*partitionShardWork] = (*workItems)(nil)
 // All data for view is read from txt database. Think of this as a guideline on
 // what to read from rbf storage.
 type view struct {
-	partition []yyyyMM
-	meta      [][]meta
+	meta []meta
 	// when provided  applies an intersection of all match
 	match []match
 	// when provided applies a union of intersecting []match.
@@ -86,7 +80,6 @@ func (v *view) IsEmpty() bool {
 }
 
 func (v *view) Reset() *view {
-	v.partition = v.partition[:0]
 	v.meta = v.meta[:0]
 	v.match = v.match[:0]
 	v.matchAny = v.matchAny[:0]
@@ -187,7 +180,18 @@ type data struct {
 type meta struct {
 	depth []bounds
 	shard uint64
+	year  uint16
+	month uint8
 	full  bool
+}
+
+func (m *meta) Key(col uint64) rbf.Key {
+	return rbf.Key{
+		Column: col,
+		Shard:  m.shard,
+		Year:   m.year,
+		Month:  m.month,
+	}
 }
 
 func (m *meta) Get(col uint64) uint8 {
@@ -243,7 +247,7 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
 	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
 		shard := m.shard
-		tsP, ok := records.Get(MetricsTimestamp)
+		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
 			return errors.New("missing ts root records")
 		}
@@ -255,7 +259,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 			return nil
 		}
 
-		kind, ok := records.Get(MetricsType)
+		kind, ok := records.Get(m.Key(MetricsType))
 		if !ok {
 			return errors.New("missing metric type root records")
 		}
@@ -285,64 +289,18 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 }
 
 func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
+	tx, err := db.db.Begin(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 
-	w := workPool.Get()
-	defer workPool.Put(w)
-
-	// Generate shards positions that we will be working with concurrently
-	w.Init(func(yield func(partitionShard) bool) {
-		for i := range vs.partition {
-			for j := range vs.meta[i] {
-				if !yield(partitionShard{Partition: uint16(i), Shard: uint16(j)}) {
-					return
-				}
-			}
-		}
-	})
-
-	// Distribute work cross all available cores.
-	return w.Do(runtime.GOMAXPROCS(0), func(item partitionShard) error {
-		m := vs.meta[item.Partition][item.Shard]
-		err := db.partition(vs.partition[item.Partition], m.shard, false, func(tx *rbf.Tx) error {
-			records, err := tx.RootRecords()
-			if err != nil {
-				return err
-			}
-			return cb(tx, records, m)
-		})
-		if err != nil {
-			return fmt.Errorf("reading shard=%s %w", shardYM{
-				shard: m.shard,
-				ym:    vs.partition[item.Partition],
-			}, err)
-		}
-		return nil
-	})
-}
-
-// walkPartitions iterates over all partitions within the lo and hi range. his is inclusive because we
-// want the last (year, month) to be searched as well.
-//
-// Returns any error returned by cb.
-func walkPartitions(tx *bbolt.Tx, lo, hi yyyyMM, cb func(key yyyyMM, m meta) error) error {
-	adminB := tx.Bucket(admin)
-	acu := adminB.Cursor()
-	from := []byte(lo.String())
-	to := []byte(hi.String())
-
-	for a, b := acu.Seek(from); a != nil && b == nil && bytes.Compare(a, to) < 1; a, b = acu.Next() {
-
-		ym, err := parsePartitionKey(magic.String(a))
-		if err != nil {
-			return err
-		}
-		err = adminB.Bucket(a).ForEach(func(k, v []byte) error {
-			o := magic.ReinterpretSlice[bounds](v)
-			return cb(ym, meta{
-				shard: binary.BigEndian.Uint64(k),
-				depth: slices.Clone(o),
-			})
-		})
+	records, err := tx.RootRecords()
+	if err != nil {
+		return err
+	}
+	for i := range vs.meta {
+		err := cb(tx, records, vs.meta[i])
 		if err != nil {
 			return err
 		}

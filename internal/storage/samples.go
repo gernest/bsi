@@ -48,7 +48,7 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) error {
 	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
 		shard := m.shard
-		tsP, ok := records.Get(MetricsTimestamp)
+		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
 			panic("missing ts root records")
 		}
@@ -60,7 +60,7 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			return nil
 		}
 
-		kind, ok := records.Get(MetricsType)
+		kind, ok := records.Get(m.Key(MetricsType))
 		if !ok {
 			panic("missing metric type root records")
 		}
@@ -140,7 +140,7 @@ func (db *Store) translate(result *samples.Samples) error {
 func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
-		root, ok := records.Get(MetricsTimestamp)
+		root, ok := records.Get(meta.Key(MetricsTimestamp))
 		if !ok {
 			return fmt.Errorf("missing timestamp root record")
 		}
@@ -150,7 +150,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(MetricsType)
+		root, ok := records.Get(meta.Key(MetricsType))
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
@@ -160,7 +160,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(MetricsLabels)
+		root, ok := records.Get(meta.Key(MetricsLabels))
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -170,7 +170,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 		}
 	}
 	{
-		root, ok := records.Get(MetricsValue)
+		root, ok := records.Get(meta.Key(MetricsValue))
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}
@@ -184,7 +184,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 }
 
 func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
-	root, ok := records.Get(MetricsLabels)
+	root, ok := records.Get(meta.Key(MetricsLabels))
 	if !ok {
 		return fmt.Errorf("missing labels root record")
 	}
@@ -198,7 +198,7 @@ func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Rec
 func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
-		root, ok := records.Get(MetricsType)
+		root, ok := records.Get(meta.Key(MetricsType))
 		if !ok {
 			return fmt.Errorf("missing metric type root record")
 		}
@@ -208,7 +208,7 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		}
 	}
 	{
-		root, ok := records.Get(MetricsLabels)
+		root, ok := records.Get(meta.Key(MetricsLabels))
 		if !ok {
 			return fmt.Errorf("missing labels root record")
 		}
@@ -218,7 +218,7 @@ func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.
 		}
 	}
 	{
-		root, ok := records.Get(MetricsValue)
+		root, ok := records.Get(meta.Key(MetricsValue))
 		if !ok {
 			return fmt.Errorf("missing values root record")
 		}

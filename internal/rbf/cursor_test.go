@@ -24,13 +24,13 @@ func TestCursor_FirstNext(t *testing.T) {
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
 
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
-	} else if _, err := tx.Add(1, 0x00000001, 0x00000002, 0x00010003, 0x00030004); err != nil {
+	} else if _, err := tx.Add(rbf.Key{Column: 1}, 0x00000001, 0x00000002, 0x00010003, 0x00030004); err != nil {
 		t.Fatal(err)
 	}
 
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.First(); err != nil {
@@ -87,12 +87,12 @@ func TestCursor_FirstNext_Quick(t *testing.T) {
 		defer tx.Rollback()
 
 		// Insert values in random order.
-		if err := tx.CreateBitmap(1); err != nil {
+		if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 			t.Fatal(err)
 		}
 		for _, i := range rand.Perm(len(values)) {
 			v := values[i]
-			if _, err := tx.Add(1, v); err != nil {
+			if _, err := tx.Add(rbf.Key{Column: 1}, v); err != nil {
 				t.Fatalf("Add(%d) i=%d err=%q", v, i, err)
 			}
 		}
@@ -120,7 +120,7 @@ func TestCursor_FirstNext_Quick(t *testing.T) {
 		}
 
 		// Verify cursor returns correct value groups.
-		c, err := tx.Cursor(1)
+		c, err := tx.Cursor(rbf.Key{Column: 1})
 		if err != nil {
 			t.Fatal(err)
 		} else if err := c.First(); err != nil {
@@ -144,13 +144,13 @@ func TestCursor_LastPrev(t *testing.T) {
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
 
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
-	} else if _, err := tx.Add(1, 0x00000001, 0x00000002, 0x00010003, 0x00030004); err != nil {
+	} else if _, err := tx.Add(rbf.Key{Column: 1}, 0x00000001, 0x00000002, 0x00010003, 0x00030004); err != nil {
 		t.Fatal(err)
 	}
 
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.Last(); err != nil {
@@ -207,12 +207,12 @@ func TestCursor_LastPrev_Quick(t *testing.T) {
 		defer tx.Rollback()
 
 		// Insert values in random order.
-		if err := tx.CreateBitmap(1); err != nil {
+		if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 			t.Fatal(err)
 		}
 		for _, i := range rand.Perm(len(values)) {
 			v := values[i]
-			if _, err := tx.Add(1, v); err != nil {
+			if _, err := tx.Add(rbf.Key{Column: 1}, v); err != nil {
 				t.Fatalf("Add(%d) i=%d err=%q", v, i, err)
 			}
 		}
@@ -240,7 +240,7 @@ func TestCursor_LastPrev_Quick(t *testing.T) {
 		}
 
 		// Verify cursor returns correct value groups.
-		c, err := tx.Cursor(1)
+		c, err := tx.Cursor(rbf.Key{Column: 1})
 		if err != nil {
 			t.Fatal(err)
 		} else if err := c.Last(); err != nil {
@@ -276,7 +276,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
 
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
@@ -287,7 +287,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 		wantErr     bool
 	}{{
 		name:      "no view",
-		fieldview: 2,
+		fieldview: rbf.Key{Column: 2},
 		rb: func() *roaring.Bitmap {
 			bm := roaring.NewBitmap()
 			return bm
@@ -296,7 +296,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 		wantErr:     false},
 		{
 			name:      "initial Array",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(0, roaring.NewContainerArray([]uint16{1, 2}))
@@ -305,7 +305,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantChanged: true,
 			wantErr:     false}, {
 			name:      "initial RLE",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(1, roaring.NewContainerRun([]roaring.Interval16{{Start: 10, Last: 20000}}))
@@ -315,7 +315,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "initial Bitmap",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(3, roaring.NewContainerBitmap(makeBitmap([]uint16{4, 8, 12})))
@@ -325,7 +325,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "merge Array exist",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(0, roaring.NewContainerArray([]uint16{1, 2}))
@@ -334,7 +334,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantChanged: false,
 			wantErr:     false}, {
 			name:      "merge Array present",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(0, roaring.NewContainerArray([]uint16{3, 4}))
@@ -344,7 +344,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "merge Bitmap exist",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(3, roaring.NewContainerBitmap(makeBitmap([]uint16{4, 8, 12})))
@@ -354,7 +354,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "merge Bitmap ",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(3, roaring.NewContainerBitmap(makeBitmap([]uint16{75})))
@@ -364,7 +364,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "merge BitmapArray ",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(0, roaring.NewContainerBitmap(makeBitmap([]uint16{75})))
@@ -373,7 +373,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantChanged: true,
 			wantErr:     false}, {
 			name:      "too Big Array ",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				items := make([]uint16, rbf.ArrayMaxSize+2)
@@ -387,7 +387,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "too Big RLE ",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				items := make([]roaring.Interval16, rbf.RLEMaxSize+2)
@@ -403,7 +403,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantChanged: true,
 			wantErr:     false}, {
 			name:      "empty container ",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(11, roaring.NewContainerArray([]uint16{}))
@@ -413,7 +413,7 @@ func TestCursor_AddRoaring(t *testing.T) {
 			wantErr:     false},
 		{
 			name:      "merge RLE",
-			fieldview: 1,
+			fieldview: rbf.Key{Column: 1},
 			rb: func() *roaring.Bitmap {
 				bm := roaring.NewBitmap()
 				bm.Put(1, roaring.NewContainerRun([]roaring.Interval16{{Start: 1, Last: 12}}))
@@ -443,7 +443,7 @@ func TestCursor_RLETesting(t *testing.T) {
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
 	//setup RLE
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	rb := func() *roaring.Bitmap {
@@ -451,7 +451,7 @@ func TestCursor_RLETesting(t *testing.T) {
 		bm.Put(0, roaring.NewContainerRun([]roaring.Interval16{{Start: 10, Last: 11}}))
 		return bm
 	}()
-	_, err := tx.AddRoaring(1, rb)
+	_, err := tx.AddRoaring(rbf.Key{Column: 1}, rb)
 	if err != nil {
 		t.Errorf("Add Roaring Failed %v", err)
 	}
@@ -517,13 +517,13 @@ func TestCursor_RLETesting(t *testing.T) {
 		},
 	}
 
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			changeCount, err := tx.Add(1, tt.args...)
+			changeCount, err := tx.Add(rbf.Key{Column: 1}, tt.args...)
 			if tt.wantErr && err == nil {
 				t.Errorf("No Error %v", err)
 			} else if tt.wantChanged && changeCount == 0 {
@@ -564,7 +564,7 @@ func TestCursor_BitmapBitN(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	bmData := make([]uint64, 1024)
@@ -572,7 +572,7 @@ func TestCursor_BitmapBitN(t *testing.T) {
 		bmData[i] = 0x5555555555555555
 	}
 	ct := roaring.NewContainerBitmap(-1, bmData)
-	err := tx.PutContainer(1, 0, ct)
+	err := tx.PutContainer(rbf.Key{Column: 1}, 0, ct)
 	if err != nil {
 		t.Fatalf("error writing container: %v", err)
 	}
@@ -580,11 +580,11 @@ func TestCursor_BitmapBitN(t *testing.T) {
 	// (rather than a BitmapPtr), while the existing cell is a BitmapPtr,
 	// may not update BitN correctly.
 	ct, _ = ct.Add(1)
-	err = tx.PutContainer(1, 0, ct)
+	err = tx.PutContainer(rbf.Key{Column: 1}, 0, ct)
 	if err != nil {
 		t.Fatalf("rewriting container: %v", err)
 	}
-	v, err := tx.Container(1, 0)
+	v, err := tx.Container(rbf.Key{Column: 1}, 0)
 	if err != nil {
 		t.Fatalf("getting container: %v", err)
 	}
@@ -604,7 +604,7 @@ func TestCursor_RLEConversion(t *testing.T) {
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
 	//setup RLE with full container
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	exp := 0 // expected count of BitN
@@ -624,11 +624,11 @@ func TestCursor_RLEConversion(t *testing.T) {
 		return bm
 	}()
 
-	_, err := tx.AddRoaring(1, rb)
+	_, err := tx.AddRoaring(rbf.Key{Column: 1}, rb)
 	if err != nil {
 		t.Errorf("Add Roaring Failed %v", err)
 	}
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.First(); err != nil {
@@ -657,7 +657,7 @@ func TestCursor_RLEConversion(t *testing.T) {
 
 	//i := 0
 	for x := uint64(65408); x < 65536; x++ {
-		_, err = tx.Add(1, x)
+		_, err = tx.Add(rbf.Key{Column: 1}, x)
 		if err != nil {
 			panic(err)
 		}
@@ -666,7 +666,7 @@ func TestCursor_RLEConversion(t *testing.T) {
 	}
 
 	//add a few bits to create another run
-	_, err = tx.Add(1,
+	_, err = tx.Add(rbf.Key{Column: 1},
 		func() []uint64 {
 			r := make([]uint64, 0, 128)
 			for x := uint64(65408); x < 65536; x++ {
@@ -735,7 +735,7 @@ func TestCursor_BitmapToArrayConversion(t *testing.T) {
 	// verify the container type got converted to an array
 	// and that the BitN and ElemN are always correct.
 	//
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -759,11 +759,11 @@ func TestCursor_BitmapToArrayConversion(t *testing.T) {
 		valmap[v] = true
 	}
 
-	_, err := tx.AddRoaring(1, rb)
+	_, err := tx.AddRoaring(rbf.Key{Column: 1}, rb)
 	if err != nil {
 		t.Errorf("Add Roaring Failed %v", err)
 	}
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.First(); err != nil {
@@ -882,10 +882,10 @@ func TestDumpDot(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -903,10 +903,10 @@ func TestCursor_UpdateBranchCells(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
-	c, err := tx.Cursor(1)
+	c, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -938,7 +938,7 @@ func TestCursor_UpdateBranchCells(t *testing.T) {
 		bm.Put(0, roaring.NewContainerRun([]roaring.Interval16{{Start: 1, Last: 2}}))
 		return bm
 	}()
-	_, err = tx.AddRoaring(1, rb)
+	_, err = tx.AddRoaring(rbf.Key{Column: 1}, rb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -973,7 +973,7 @@ func TestCursor_SplitBranchCells(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	rb := func(key uint64) *roaring.Bitmap {
@@ -992,7 +992,7 @@ func TestCursor_SplitBranchCells(t *testing.T) {
 	numContainers := 314
 	for i := 0; i < numContainers; i++ { //need to calculate how many will force a split
 		b := rb(uint64(i))
-		if _, err := tx.AddRoaring(1, b); err != nil {
+		if _, err := tx.AddRoaring(rbf.Key{Column: 1}, b); err != nil {
 			panic(err)
 		}
 	}
@@ -1004,7 +1004,7 @@ func TestCursor_SplitBranchCells(t *testing.T) {
 
 	}
 	// adding one more container should split it
-	if _, err := tx.AddRoaring(1, rb(uint64(numContainers))); err != nil {
+	if _, err := tx.AddRoaring(rbf.Key{Column: 1}, rb(uint64(numContainers))); err != nil {
 		panic(err)
 	}
 
@@ -1016,7 +1016,7 @@ func TestCursor_SplitBranchCells(t *testing.T) {
 
 	}
 	//
-	c, _ := tx.Cursor(1) //added just for dot code coverage
+	c, _ := tx.Cursor(rbf.Key{Column: 1}) //added just for dot code coverage
 	c.Dump("test.dump")
 	os.Remove("test.dump")
 }
@@ -1026,10 +1026,10 @@ func TestCursor_RemoveCells(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
-	cur, _ := tx.Cursor(1)
+	cur, _ := tx.Cursor(rbf.Key{Column: 1})
 	rb := func(key uint64) *roaring.Bitmap {
 		bm := roaring.NewBitmap()
 		bits := make([]uint64, rbf.BitmapN)
@@ -1044,7 +1044,7 @@ func TestCursor_RemoveCells(t *testing.T) {
 	numContainers := 455 //enough containers to cause a split
 	for i := 0; i < numContainers; i++ {
 		b := rb(uint64(i))
-		if _, err := tx.AddRoaring(1, b); err != nil {
+		if _, err := tx.AddRoaring(rbf.Key{Column: 1}, b); err != nil {
 			panic(err)
 		}
 	}
@@ -1068,7 +1068,7 @@ func TestCursor_PlayContainer(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	many := func(c *rbf.Cursor, start, count uint64) {
@@ -1078,7 +1078,7 @@ func TestCursor_PlayContainer(t *testing.T) {
 			}
 		}
 	}
-	cur, _ := tx.Cursor(1)
+	cur, _ := tx.Cursor(rbf.Key{Column: 1})
 	offset := uint64(0)
 	many(cur, 0, rbf.ArrayMaxSize+offset)
 	many(cur, 65536, rbf.ArrayMaxSize+offset)
@@ -1103,7 +1103,7 @@ func TestCursor_OneBitmap(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	rb := func(key uint64) *roaring.Bitmap {
@@ -1120,11 +1120,11 @@ func TestCursor_OneBitmap(t *testing.T) {
 	numContainers := 4
 	for i := 0; i < numContainers; i++ { //need to calculate how many will force a split
 		b := rb(uint64(i)) // measured at i=454 seems reasonable should occur at Len(branchcells)+header >8192
-		if _, err := tx.AddRoaring(1, b); err != nil {
+		if _, err := tx.AddRoaring(rbf.Key{Column: 1}, b); err != nil {
 			panic(err)
 		}
 	}
-	cur, err := tx.Cursor(1)
+	cur, err := tx.Cursor(rbf.Key{Column: 1})
 	if err != nil {
 		panic(err)
 	}
@@ -1137,7 +1137,7 @@ func TestCursor_GenerateAll(t *testing.T) {
 	defer MustCloseDB(t, db)
 	tx := MustBegin(t, db, true)
 	defer tx.Rollback()
-	if err := tx.CreateBitmap(1); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 		t.Fatal(err)
 	}
 	ar := func() *roaring.Bitmap {
@@ -1145,7 +1145,7 @@ func TestCursor_GenerateAll(t *testing.T) {
 		bm.Put(11, roaring.NewContainerArray([]uint16{1, 2, 3}))
 		return bm
 	}()
-	if _, err := tx.AddRoaring(1, ar); err != nil {
+	if _, err := tx.AddRoaring(rbf.Key{Column: 1}, ar); err != nil {
 		panic(err)
 	}
 	rb := func() *roaring.Bitmap {
@@ -1153,7 +1153,7 @@ func TestCursor_GenerateAll(t *testing.T) {
 		bm.Put(1, roaring.NewContainerRun([]roaring.Interval16{{Start: 1, Last: 12}}))
 		return bm
 	}()
-	if _, err := tx.AddRoaring(1, rb); err != nil {
+	if _, err := tx.AddRoaring(rbf.Key{Column: 1}, rb); err != nil {
 		panic(err)
 	}
 	bb := func() *roaring.Bitmap {
@@ -1161,13 +1161,13 @@ func TestCursor_GenerateAll(t *testing.T) {
 		bm.Put(0, roaring.NewContainerBitmap(makeBitmap([]uint16{75})))
 		return bm
 	}()
-	if _, err := tx.AddRoaring(1, bb); err != nil {
+	if _, err := tx.AddRoaring(rbf.Key{Column: 1}, bb); err != nil {
 		panic(err)
 	}
-	if err := tx.CreateBitmap(4); err != nil {
+	if err := tx.CreateBitmap(rbf.Key{Column: 4}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.AddRoaring(4, bb); err != nil {
+	if _, err := tx.AddRoaring(rbf.Key{Column: 4}, bb); err != nil {
 		panic(err)
 	}
 }
@@ -1180,7 +1180,7 @@ func TestCursor_PutContainer(t *testing.T) {
 		tx := MustBegin(t, db, true)
 		defer tx.Rollback()
 
-		if err := tx.CreateBitmap(1); err != nil {
+		if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -1188,10 +1188,10 @@ func TestCursor_PutContainer(t *testing.T) {
 		for i := range bmData {
 			bmData[i] = 0x5555555555555555
 		}
-		if err := tx.PutContainer(1, 0, roaring.NewContainerBitmap(-1, bmData)); err != nil {
+		if err := tx.PutContainer(rbf.Key{Column: 1}, 0, roaring.NewContainerBitmap(-1, bmData)); err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.PutContainer(1, 0, roaring.NewContainerArray([]uint16{0})); err != nil {
+		if err := tx.PutContainer(rbf.Key{Column: 1}, 0, roaring.NewContainerArray([]uint16{0})); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {
@@ -1206,7 +1206,7 @@ func TestCursor_PutContainer(t *testing.T) {
 		tx := MustBegin(t, db, true)
 		defer tx.Rollback()
 
-		if err := tx.CreateBitmap(1); err != nil {
+		if err := tx.CreateBitmap(rbf.Key{Column: 1}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -1214,7 +1214,7 @@ func TestCursor_PutContainer(t *testing.T) {
 		for i := range data0 {
 			data0[i] = 0x5555555555555555
 		}
-		if err := tx.PutContainer(1, 0, roaring.NewContainerBitmap(-1, data0)); err != nil {
+		if err := tx.PutContainer(rbf.Key{Column: 1}, 0, roaring.NewContainerBitmap(-1, data0)); err != nil {
 			t.Fatal(err)
 		}
 
@@ -1222,7 +1222,7 @@ func TestCursor_PutContainer(t *testing.T) {
 		for i := range data0 {
 			data1[i] = 0x7777777777777777
 		}
-		if err := tx.PutContainer(1, 0, roaring.NewContainerBitmap(-1, data1)); err != nil {
+		if err := tx.PutContainer(rbf.Key{Column: 1}, 0, roaring.NewContainerBitmap(-1, data1)); err != nil {
 			t.Fatal(err)
 		}
 

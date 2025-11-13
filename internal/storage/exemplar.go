@@ -38,7 +38,7 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 
 	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
 		shard := m.shard
-		tsP, ok := records.Get(MetricsTimestamp)
+		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
 			panic("missing ts root records")
 		}
@@ -50,7 +50,7 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 			return nil
 		}
 
-		kind, ok := records.Get(MetricsType)
+		kind, ok := records.Get(m.Key(MetricsType))
 		if !ok {
 			panic("missing metric type root records")
 		}

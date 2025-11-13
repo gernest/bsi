@@ -19,7 +19,9 @@ import (
 
 func rbfName(index, field, view string, shard uint64) Key {
 	k := fmt.Sprintf("%v:%v:%v;%v", index, field, view, shard)
-	return xxhash.Sum64([]byte(k))
+	return Key{
+		Column: xxhash.Sum64String(k),
+	}
 }
 
 /*

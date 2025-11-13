@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/seq"
-	"github.com/gernest/bsi/internal/storage/single"
 	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
@@ -38,11 +36,10 @@ func (tsidItems) Reset(v *tsid.B) *tsid.B {
 
 // Store implements timeseries database.
 type Store struct {
-	rbf single.Group[shardYM, *rbf.DB, string]
 	txt *bbolt.DB
 	lo  *slog.Logger
+	db  *rbf.DB
 
-	dataPath  string
 	retention atomic.Int64
 	deletion  atomic.Uint64
 }
@@ -52,7 +49,8 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 	if lo == nil {
 		lo = promslog.NewNopLogger()
 	}
-	err := os.MkdirAll(dataPath, 0755)
+	db.db = rbf.NewDB(dataPath, nil)
+	err := db.db.Open()
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)
 	}
@@ -98,16 +96,6 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 		return nil
 	})
 
-	db.rbf.Init(lo, func(ym shardYM, s string) (*rbf.DB, error) {
-		path := filepath.Join(s, ym.ym.String(), fmt.Sprintf("%06d", ym.shard))
-		da := rbf.NewDB(path, nil)
-		err := da.Open()
-		if err != nil {
-			return nil, fmt.Errorf("opening rbf database %w", err)
-		}
-		return da, nil
-	})
-	db.dataPath = dataPath
 	db.txt = tdb
 	db.lo = lo
 	return nil
@@ -120,7 +108,7 @@ func (db *Store) SetRetention(retention int64) {
 // Close implements storage.Storage.
 func (db *Store) Close() error {
 	return errors.Join(
-		db.txt.Close(), db.rbf.Close(),
+		db.txt.Close(), db.db.Close(),
 	)
 }
 
@@ -241,54 +229,21 @@ func (db *Store) saveMetadata(ma partitions) error {
 }
 
 func (db *Store) apply(ma partitions) error {
-	for k, v := range ma {
-		err := db.applyPartition(k, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (db *Store) applyPartition(ym yyyyMM, ma batch) error {
-	for shard, v := range ma {
-		err := db.partition(ym, shard, true, func(tx *rbf.Tx) error {
-			for col, ra := range v.columns {
-				ra.Optimize()
-				_, err := tx.AddRoaring(col, ra)
-				if err != nil {
-					return fmt.Errorf("writing bitmap %w", err)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
-func (db *Store) partition(key yyyyMM, shard uint64, writable bool, cb func(tx *rbf.Tx) error) error {
-	da, done, err := db.rbf.Do(shardYM{shard: shard, ym: key}, db.dataPath)
-	if err != nil {
-		return err
-	}
-	defer done.Close()
-
-	tx, err := da.Begin(writable)
+	tx, err := db.db.Begin(true)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	err = cb(tx)
-	if err != nil {
-		return err
+	for pa, ba := range ma {
+		for sha, da := range ba {
+			for co, ra := range da.columns {
+				ra.Optimize()
+				_, err := tx.AddRoaring(rbf.Key{Column: co, Shard: sha, Year: uint16(pa.year), Month: uint8(pa.month)}, ra)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
-	if writable {
-		return tx.Commit()
-	}
-	return nil
+	return tx.Commit()
 }

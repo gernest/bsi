@@ -124,23 +124,19 @@ func findPartitions(tx *bbolt.Tx, start, end int64, vs *view) error {
 		if err != nil {
 			return fmt.Errorf("parsing partition %w", err)
 		}
-		var all []meta
 		cu := adminB.Bucket(name).Cursor()
 
 		for k, v := cu.First(); v != nil; k, v = cu.Next() {
 
 			o := magic.ReinterpretSlice[bounds](v)
 			if o[0].minMax.InRange(start, end) {
-				all = append(all, meta{
-					shard: binary.BigEndian.Uint64(k),
+				vs.meta = append(vs.meta, meta{
 					depth: slices.Clone(o),
+					shard: binary.BigEndian.Uint64(k),
+					year:  uint16(key.year),
+					month: uint8(key.month),
 				})
 			}
-		}
-
-		if len(all) > 0 {
-			vs.partition = append(vs.partition, key)
-			vs.meta = append(vs.meta, all)
 		}
 	}
 	return nil

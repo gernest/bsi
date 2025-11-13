@@ -103,7 +103,7 @@ func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, meta *meta, filter *roari
 }
 
 func readBSIFilter(tx *rbf.Tx, records *rbf.Records, meta *meta, match *match) (*roaring.Bitmap, error) {
-	root, ok := records.Get(match.Column())
+	root, ok := records.Get(meta.Key(match.Column()))
 	if !ok {
 		return nil, fmt.Errorf("missing root record for column %s", match.column)
 	}
@@ -125,7 +125,7 @@ func readBSIFilter(tx *rbf.Tx, records *rbf.Records, meta *meta, match *match) (
 }
 
 func readBSIFilterExists(tx *rbf.Tx, records *rbf.Records, meta *meta, match *match) (*roaring.Bitmap, error) {
-	root, ok := records.Get(match.Column())
+	root, ok := records.Get(meta.Key(match.Column()))
 	if !ok {
 		return nil, fmt.Errorf("missing root record for column %s", match.column)
 	}

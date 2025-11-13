@@ -16,15 +16,38 @@ const recordSize = int(unsafe.Sizeof(Record{}))
 // Records holds immutable mapping of bitmap keys to root page number.
 type Records = immutable.SortedMap[Key, uint32]
 
-type Key = uint64
+type Key struct {
+	Column uint64
+	Shard  uint64
+	Year   uint16
+	Month  uint8
+}
+
+var zero Key
+
+func (k Key) IsEmpty() bool {
+	return k == zero
+}
+
+func (k Key) String() string {
+	return fmt.Sprintf("%04d_%02d_%06d_%06d", k.Year, k.Month, k.Shard, k.Column)
+}
 
 type Record struct {
 	Column uint64
+	Shard  uint64
 	Page   uint32
+	Year   uint16
+	Month  uint8
 }
 
 func (r *Record) Key() Key {
-	return r.Column
+	return Key{
+		Column: r.Column,
+		Shard:  r.Shard,
+		Year:   r.Year,
+		Month:  r.Month,
+	}
 }
 
 var zeroRecord Record
@@ -56,7 +79,19 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	return cmp.Compare(a, b)
+	i := cmp.Compare(a.Year, b.Year)
+	if i != 0 {
+		return i
+	}
+	i = cmp.Compare(a.Month, b.Month)
+	if i != 0 {
+		return i
+	}
+	i = cmp.Compare(a.Shard, b.Shard)
+	if i != 0 {
+		return i
+	}
+	return cmp.Compare(a.Column, b.Column)
 }
 
 type Size struct {
