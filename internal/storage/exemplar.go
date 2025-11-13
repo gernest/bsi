@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"fmt"
-
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/samples"
@@ -62,11 +60,6 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 		ra = ra.Intersect(exe)
 		if !ra.Any() {
 			return nil
-		}
-
-		ra, err = applyBSIFiltersAny(tx, records, m, ra, vs.matchAny)
-		if err != nil {
-			return fmt.Errorf("applying filters %w", err)
 		}
 
 		return readExemplars(result, m, tx, records, shard, ra)

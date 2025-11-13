@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"fmt"
-
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/raw"
@@ -28,106 +26,4 @@ func readRaw(tx *rbf.Tx, root uint32, shard uint64, depth uint8, filter *roaring
 	defer cu.Close()
 
 	return result.From(cu, shard, uint8(depth), filter)
-}
-
-func applyBSIFiltersAny(tx *rbf.Tx, records *rbf.Records, meta *meta, filter *roaring.Bitmap, matchers [][]match) (*roaring.Bitmap, error) {
-	all := make([]*roaring.Bitmap, 0, len(matchers))
-	for i := range matchers {
-		m := matchers[i]
-		rx, err := readBSIFilter(tx, records, meta, &m[0])
-		if err != nil {
-			return nil, err
-		}
-		if !rx.Any() {
-			continue
-		}
-		rx, err = applyBSIFilters(tx, records, meta, rx, matchers[i][1:])
-		if err != nil {
-			return nil, err
-		}
-		if !rx.Any() {
-			continue
-		}
-		all = append(all, rx)
-	}
-	if len(all) == 0 {
-		return roaring.NewBitmap(), nil
-	}
-	if len(all) == 1 {
-		return filter.Intersect(all[0]), nil
-	}
-	return filter.Intersect(all[0].Union(all[1:]...)), nil
-}
-
-func applyBSIFilters(tx *rbf.Tx, records *rbf.Records, meta *meta, filter *roaring.Bitmap, matchers []match) (*roaring.Bitmap, error) {
-	for i := range matchers {
-		m := &matchers[i]
-		depth := meta.Get(m.Column())
-
-		if len(m.rows) == 0 || (len(m.rows) == 1 && m.rows[0] == 0) {
-			switch m.op {
-			case bitmaps.EQ:
-				if depth == 0 {
-					// like prometheus: m.column is not present at all, so we accept
-					// filter as is.
-					continue
-				}
-				return roaring.NewBitmap(), nil
-			case bitmaps.NEQ:
-				if depth != 0 {
-					// select all existence bits for the column
-					rx, err := readBSIFilterExists(tx, records, meta, m)
-					if err != nil {
-						return nil, err
-					}
-					filter = filter.Intersect(rx)
-					if !filter.Any() {
-						return filter, nil
-					}
-				}
-				continue
-			default:
-				panic(fmt.Sprintf("unexpected operation %s for col=%s ", m.op, m.column))
-			}
-		}
-		rx, err := readBSIFilter(tx, records, meta, m)
-		if err != nil {
-			return nil, err
-		}
-		filter = filter.Intersect(rx)
-		if !filter.Any() {
-			break
-		}
-	}
-	return filter, nil
-}
-
-func readBSIFilter(tx *rbf.Tx, records *rbf.Records, meta *meta, match *match) (*roaring.Bitmap, error) {
-	root, ok := records.Get(meta.Key(match.Column()))
-	if !ok {
-		return nil, fmt.Errorf("missing root record for column %s", match.column)
-	}
-	depth := meta.Get(match.Column())
-	if len(match.rows) == 1 {
-		return readBSIRange(tx, root, meta.shard, depth, match.op, int64(match.rows[0]), 0)
-	}
-
-	// multiple values in the same search are treated as union.
-	all := make([]*roaring.Bitmap, len(match.rows))
-	var err error
-	for i := range match.rows {
-		all[i], err = readBSIRange(tx, root, meta.shard, depth, match.op, int64(match.rows[i]), 0)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return all[0].Union(all[1:]...), nil
-}
-
-func readBSIFilterExists(tx *rbf.Tx, records *rbf.Records, meta *meta, match *match) (*roaring.Bitmap, error) {
-	root, ok := records.Get(meta.Key(match.Column()))
-	if !ok {
-		return nil, fmt.Errorf("missing root record for column %s", match.column)
-	}
-	return readBSIExists(tx, root, meta.shard)
 }

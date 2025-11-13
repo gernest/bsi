@@ -7,7 +7,6 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,13 +59,9 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 		cu := searchB.Cursor()
 		for _, m := range matchers {
 			switch m.Type {
-			case labels.MatchEqual, labels.MatchNotEqual:
+			case labels.MatchEqual:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				var va uint64
-				op := bitmaps.EQ
-				if m.Type == labels.MatchNotEqual {
-					op = bitmaps.NEQ
-				}
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
@@ -77,15 +72,35 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				ma := match{
 					column: m.Name,
 					rows:   []uint64{va},
-					op:     op,
 				}
 				if !yield(ma) {
 					return
 				}
-			case labels.MatchRegexp, labels.MatchNotRegexp:
+			case labels.MatchRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				values := make([]uint64, 0, 64)
-				op := bitmaps.EQ
+				if bytes.Equal(b, magic.Slice(m.Name)) {
+					mb := searchB.Bucket(b)
+					mc := mb.Cursor()
+					prefix := magic.Slice(m.Prefix())
+					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix); a, b = mc.Next() {
+						if m.Matches(magic.String(a)) {
+							va := binary.BigEndian.Uint64(b)
+							values = append(values, va)
+						}
+					}
+				}
+				ma := match{
+					column: m.Name,
+					rows:   values,
+				}
+				if !yield(ma) {
+					return
+				}
+
+			case labels.MatchNotEqual, labels.MatchNotRegexp:
+				b, _ := cu.Seek(magic.Slice(m.Name))
+				values := make([]uint64, 0, 64)
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
@@ -96,15 +111,14 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 						}
 					}
 				}
-
 				ma := match{
 					column: m.Name,
 					rows:   values,
-					op:     op,
 				}
 				if !yield(ma) {
 					return
 				}
+
 			}
 
 		}

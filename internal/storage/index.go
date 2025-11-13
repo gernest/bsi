@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"iter"
+	"math"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -68,7 +70,6 @@ type view struct {
 type match struct {
 	column string
 	rows   []uint64
-	op     bitmaps.OP
 }
 
 func (m *match) Column() uint64 {
@@ -280,11 +281,6 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 			return nil
 		}
 
-		ra, err = applyBSIFilters(tx, records, m, ra, vs.match)
-		if err != nil {
-			return fmt.Errorf("applying filters %w", err)
-		}
-
 		return readSeries(result, m, tx, records, shard, ra)
 	})
 
@@ -308,4 +304,204 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m *met
 		}
 	}
 	return nil
+}
+
+func (db *Store) read2(vs *view, sa *samples.Samples, start, end int64, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, m *meta) error) error {
+	tx, err := db.db.Begin(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return err
+	}
+	for i := range vs.meta {
+		// we are looking for column ids that satisfy request conditions within
+		// (partition, shard).
+		//
+		// 1. select all columns ids from MetricsTimestamp column that has values
+		// BETWEEN start and end time.
+		// We skip execution if no column ids matched.
+		//
+		// 2. apply matchers
+		// matchers are used to generate bitmap of all metrics series ids to read from.
+		//
+		// If (*view).match is specified , we perform intersection of all metrics_id and
+		// if (*view).matchAny is specified , we perform union of all metrics_id for the respective
+		// set.
+		//
+		// 3. intersect 1 & 2 bitmaps, which yields correct column ids to read
+		// in the current (partition, shard) tuple.
+		m := &vs.meta[i]
+		ra, err := selectTimeRange(tx, records, start, end, m)
+		if err != nil {
+			return err
+		}
+		if !ra.Any() {
+			continue
+		}
+		series, err := selectSeriesID(tx, records, vs, m)
+		if err != nil {
+			return err
+		}
+		ra = ra.Intersect(series)
+		if !ra.Any() {
+			// fast path: skip current shard.
+			continue
+		}
+		err = cb(tx, records, ra, m)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func selectSeriesID(tx *rbf.Tx, records *rbf.Records, vs *view, m *meta) (*roaring.Bitmap, error) {
+	var (
+		ids *roaring.Bitmap
+		err error
+	)
+	if len(vs.match) > 0 {
+		ids, err = selectSeriesIDAll(tx, records, vs.match, m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(vs.matchAny) > 0 {
+		ids, err = selectSeriesIDAny(tx, records, vs.matchAny, m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if ids != nil {
+		if !ids.Any() {
+			return ids, nil
+		}
+		// apply union of all series.
+		root, ok := records.Get(m.Key(MetricsLabels))
+		if !ok {
+			return nil, fmt.Errorf("bitmap %s not found", m.Key(MetricsLabels))
+		}
+		all := make([]*roaring.Bitmap, 0, ids.Count())
+		depth := m.Get(MetricsLabels)
+		for value := range ids.RangeAll() {
+			ra, err := readBSIRange(tx, root, m.shard, depth, bitmaps.EQ, int64(value), 0)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, ra)
+		}
+		return all[0].Union(all[1:]...), nil
+	}
+	return roaring.NewBitmap(), nil
+}
+
+func selectSeriesIDAny(tx *rbf.Tx, records *rbf.Records, matchers [][]match, m *meta) (*roaring.Bitmap, error) {
+	if len(matchers) == 0 {
+		return roaring.NewBitmap(), nil
+	}
+	all := make([]*roaring.Bitmap, len(matchers))
+	var err error
+	for i := range matchers {
+		all[i], err = selectSeriesIDAll(tx, records, matchers[i], m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return all[0].Union(all[1:]...), nil
+}
+
+func selectSeriesIDAll(tx *rbf.Tx, records *rbf.Records, matchers []match, m *meta) (*roaring.Bitmap, error) {
+	if len(matchers) == 0 {
+		return roaring.NewBitmap(), nil
+	}
+	ra, err := selectRow(tx, records, matchers[0].Column(), matchers[0].rows, m)
+	if err != nil {
+		return nil, err
+	}
+	if !ra.Any() {
+		return ra, nil
+	}
+
+	for i := 1; i < len(matchers); i++ {
+		rx, err := selectRow(tx, records, matchers[i].Column(), matchers[i].rows, m)
+		if err != nil {
+			return nil, err
+		}
+		if !rx.Any() {
+			return rx, nil
+		}
+		ra = ra.Intersect(rx)
+		if !ra.Any() {
+			return ra, nil
+		}
+	}
+	return ra, nil
+}
+
+func selectRow(tx *rbf.Tx, records *rbf.Records, col uint64, rows []uint64, m *meta) (*roaring.Bitmap, error) {
+	result := roaring.NewBitmap()
+	for shard, page := range rangeShards(records, col, m.year, m.month) {
+		for i := range rows {
+			ra, err := readRow(tx, page, shard, rows[i])
+			if err != nil {
+				return nil, err
+			}
+			result = result.Union(ra)
+		}
+
+	}
+	return result, nil
+}
+
+func readRow(tx *rbf.Tx, root uint32, shard, row uint64) (*roaring.Bitmap, error) {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	return bitmaps.Row(cu, shard, row)
+}
+
+func rangeShards(records *rbf.Records, col uint64, year uint16, month uint8) iter.Seq2[uint64, uint32] {
+	it := records.Iterator()
+	lo := rbf.Key{
+		Column: col,
+		Year:   year,
+		Month:  month,
+	}
+	hi := rbf.Key{
+		Column: col,
+		Year:   year,
+		Month:  month,
+		Shard:  math.MaxUint64,
+	}
+	return func(yield func(uint64, uint32) bool) {
+		co := rbf.CompareRecord{}
+
+		for it.Seek(lo); !it.Done(); {
+			name, page, ok := it.Next()
+			if !ok {
+				break
+			}
+			if co.Compare(name, hi) < 0 {
+				if !yield(name.Shard, page) {
+					return
+				}
+				continue
+			}
+			break
+		}
+	}
+}
+
+// Returns all column ids observed within start and end range inclusively. Returns an error if the timestamp
+// bitmap is missing.
+func selectTimeRange(tx *rbf.Tx, records *rbf.Records, start, end int64, m *meta) (*roaring.Bitmap, error) {
+	ts, ok := records.Get(m.Key(MetricsTimestamp))
+	if !ok {
+		return nil, fmt.Errorf("bitmap %s not found", m.Key(MetricsTimestamp))
+	}
+	return readBSIRange(tx, ts, m.shard, m.Get(MetricsTimestamp), bitmaps.BETWEEN, start, end)
 }

@@ -84,11 +84,6 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			return nil
 		}
 
-		ra, err = applyBSIFilters(tx, records, m, ra, vs.match)
-		if err != nil {
-			return fmt.Errorf("applying filters %w", err)
-		}
-
 		return readSamples(result, m, tx, records, shard, ra)
 
 	})
