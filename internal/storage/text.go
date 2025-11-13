@@ -69,14 +69,14 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 			}
 
 			// generate tsid
-			id := out.B[i][:0]
+			out.B[i] = out.B[i][:0]
 
 			var err error
 			tid, err := metricsSumB.NextSequence()
 			if err != nil {
 				return fmt.Errorf("generating metrics sequence %w", err)
 			}
-			id = append(id, tsid.Column{
+			out.B[i] = append(out.B[i], tsid.Column{
 				ID:    MetricsLabels,
 				Value: tid,
 			})
@@ -91,7 +91,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
-					id = append(id, tsid.Column{
+					out.B[i] = append(out.B[i], tsid.Column{
 						ID:    view,
 						Value: binary.BigEndian.Uint64(got),
 					})
@@ -105,22 +105,21 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					id = append(id, tsid.Column{
+					out.B[i] = append(out.B[i], tsid.Column{
 						ID:    view,
 						Value: nxt,
 					})
 				}
 			}
-			out.B[i] = id
 
 			// 2. store checksum => tsid in checksums bucket
-			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](id))
+			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](out.B[i]))
 			if err != nil {
 				return fmt.Errorf("storing metrics checksum %w", err)
 			}
 
 			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, id[0].Value), r.Labels[i])
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, out.B[i][0].Value), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
 			}
@@ -212,64 +211,6 @@ func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value 
 		}
 	}
 	return nil
-}
-
-type Matchers struct {
-	Columns []uint64
-	Negate  []bool
-	Rows    []*roaring.Bitmap
-}
-
-// Any returns true if m conditions might match.
-func (m *Matchers) Any() bool {
-	// Prometheus labels matchers is an intersection of all condition. We can safely determine
-	// state of m that will never satisfy conditions without touching rbf.
-
-	for i := range m.Columns {
-		if !m.Negate[i] && !m.Rows[i].Any() {
-			// one of the condition is false. Intersection will always be false.
-			return false
-		}
-	}
-	return true
-}
-
-// LabelMatchers finds rows matching matchers and write them to results.
-func LabelMatchers(db *bbolt.DB, result *Matchers, matches []*labels.Matcher) error {
-	return db.View(func(tx *bbolt.Tx) error {
-		searchB := tx.Bucket(search)
-
-		for _, l := range matches {
-			col := xxhash.Sum64(magic.Slice(l.Name))
-			ra := roaring.NewBitmap()
-			var negate bool
-			switch l.Type {
-			case labels.MatchEqual, labels.MatchNotEqual:
-				negate = l.Type == labels.MatchNotEqual
-				b := searchB.Bucket(magic.Slice(l.Name))
-				if b != nil {
-					v := b.Get(magic.Slice(l.Value))
-					if v != nil {
-						ra.DirectAdd(binary.BigEndian.Uint64(v))
-					}
-				}
-			case labels.MatchRegexp, labels.MatchNotRegexp:
-				negate = l.Type == labels.MatchNotRegexp
-				b := searchB.Bucket(magic.Slice(l.Name))
-				if b != nil {
-					cu := b.Cursor()
-					prefix := magic.Slice(l.Prefix())
-					for k, v := cu.Seek(prefix); v != nil && bytes.HasPrefix(k, prefix); k, v = cu.Next() {
-						ra.DirectAdd(binary.BigEndian.Uint64(v))
-					}
-				}
-			}
-			result.Columns = append(result.Columns, col)
-			result.Negate = append(result.Negate, negate)
-			result.Rows = append(result.Rows, ra)
-		}
-		return nil
-	})
 }
 
 func rangeSetsRa(ra *roaring.Bitmap) iter.Seq2[uint64, uint64] {
