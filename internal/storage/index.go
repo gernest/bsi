@@ -245,7 +245,7 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 }
 
 func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
+	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m *meta) error {
 		shard := m.shard
 		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
@@ -278,7 +278,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 			return nil
 		}
 
-		ra, err = applyBSIFilters(tx, records, &m, ra, vs.match)
+		ra, err = applyBSIFilters(tx, records, m, ra, vs.match)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}
@@ -288,7 +288,7 @@ func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64)
 
 }
 
-func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta) error) error {
+func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m *meta) error) error {
 	tx, err := db.db.Begin(false)
 	if err != nil {
 		return err
@@ -300,7 +300,7 @@ func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m meta
 		return err
 	}
 	for i := range vs.meta {
-		err := cb(tx, records, vs.meta[i])
+		err := cb(tx, records, &vs.meta[i])
 		if err != nil {
 			return err
 		}

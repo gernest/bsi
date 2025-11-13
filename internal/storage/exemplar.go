@@ -36,7 +36,7 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 
 func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int64) error {
 
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
+	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m *meta) error {
 		shard := m.shard
 		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
@@ -64,7 +64,7 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 			return nil
 		}
 
-		ra, err = applyBSIFiltersAny(tx, records, &m, ra, vs.matchAny)
+		ra, err = applyBSIFiltersAny(tx, records, m, ra, vs.matchAny)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}

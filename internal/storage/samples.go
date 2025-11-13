@@ -46,7 +46,7 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 }
 
 func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m meta) error {
+	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m *meta) error {
 		shard := m.shard
 		tsP, ok := records.Get(m.Key(MetricsTimestamp))
 		if !ok {
@@ -84,7 +84,7 @@ func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) err
 			return nil
 		}
 
-		ra, err = applyBSIFilters(tx, records, &m, ra, vs.match)
+		ra, err = applyBSIFilters(tx, records, m, ra, vs.match)
 		if err != nil {
 			return fmt.Errorf("applying filters %w", err)
 		}
@@ -137,7 +137,7 @@ func (db *Store) translate(result *samples.Samples) error {
 
 }
 
-func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readSamples(result *samples.Samples, meta *meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
 		root, ok := records.Get(meta.Key(MetricsTimestamp))
@@ -183,7 +183,7 @@ func readSamples(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Re
 	return nil
 }
 
-func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readSeries(result *samples.Samples, meta *meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 	root, ok := records.Get(meta.Key(MetricsLabels))
 	if !ok {
 		return fmt.Errorf("missing labels root record")
@@ -195,7 +195,7 @@ func readSeries(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Rec
 	return nil
 }
 
-func readExemplars(result *samples.Samples, meta meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readExemplars(result *samples.Samples, meta *meta, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
 
 	{
 		root, ok := records.Get(meta.Key(MetricsType))
