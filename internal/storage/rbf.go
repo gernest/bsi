@@ -16,7 +16,7 @@ func readBSIRange(tx *rbf.Tx, root uint32, shard uint64, depth uint8, op bitmaps
 	return bitmaps.Range(cu, op, shard, uint64(depth), predicate, end)
 }
 
-func readBSIExists(tx *rbf.Tx, root uint32, shard uint64, depth uint8) (*roaring.Bitmap, error) {
+func readBSIExists(tx *rbf.Tx, root uint32, shard uint64) (*roaring.Bitmap, error) {
 	cu := tx.CursorFromRoot(root)
 	defer cu.Close()
 
@@ -129,5 +129,5 @@ func readBSIFilterExists(tx *rbf.Tx, records *rbf.Records, meta *meta, match *ma
 	if !ok {
 		return nil, fmt.Errorf("missing root record for column %s", match.column)
 	}
-	return readBSIExists(tx, root, meta.shard, meta.Get(match.Column()))
+	return readBSIExists(tx, root, meta.shard)
 }
