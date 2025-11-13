@@ -185,8 +185,8 @@ type data struct {
 
 // meta  is in memory metadata about rbf shard.
 type meta struct {
-	shard uint64
 	depth []bounds
+	shard uint64
 	full  bool
 }
 
