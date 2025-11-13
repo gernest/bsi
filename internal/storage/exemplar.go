@@ -4,6 +4,7 @@ import (
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/samples"
+	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -34,25 +35,13 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 
 func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int64) error {
 
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m *meta) error {
-		shard := m.shard
-		tsP, ok := records.Get(m.Key(MetricsTimestamp))
-		if !ok {
-			panic("missing ts root records")
-		}
-		ra, err := readBSIRange(tx, tsP, shard, m.Get(MetricsTimestamp), bitmaps.BETWEEN, start, end)
-		if err != nil {
-			return err
-		}
-		if !ra.Any() {
-			return nil
-		}
+	return db.read(vs, start, end, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, m *meta) error {
 
 		kind, ok := records.Get(m.Key(MetricsType))
 		if !ok {
 			panic("missing metric type root records")
 		}
-		exe, err := readBSIRange(tx, kind, shard, m.Get(MetricsType), bitmaps.EQ, int64(Exemplar), 0)
+		exe, err := readBSIRange(tx, kind, m.shard, m.Get(MetricsType), bitmaps.EQ, int64(Exemplar), 0)
 		if err != nil {
 			return err
 		}
@@ -61,8 +50,6 @@ func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int6
 		if !ra.Any() {
 			return nil
 		}
-
-		return readExemplars(result, m, tx, records, shard, ra)
-
+		return readExemplars(result, m, tx, records, ra)
 	})
 }

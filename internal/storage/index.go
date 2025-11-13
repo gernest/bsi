@@ -2,7 +2,6 @@ package storage
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"iter"
 	"math"
@@ -248,65 +247,12 @@ func (s *data) get(col uint64) *roaring.Bitmap {
 }
 
 func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, func(tx *rbf.Tx, records *rbf.Records, m *meta) error {
-		shard := m.shard
-		tsP, ok := records.Get(m.Key(MetricsTimestamp))
-		if !ok {
-			return errors.New("missing ts root records")
-		}
-		ra, err := readBSIRange(tx, tsP, shard, m.Get(MetricsTimestamp), bitmaps.BETWEEN, start, end)
-		if err != nil {
-			return err
-		}
-		if !ra.Any() {
-			return nil
-		}
-
-		kind, ok := records.Get(m.Key(MetricsType))
-		if !ok {
-			return errors.New("missing metric type root records")
-		}
-		float, err := readBSIRange(tx, kind, shard, m.Get(MetricsType), bitmaps.EQ, int64(Float), 0)
-		if err != nil {
-			return err
-		}
-		histogram, err := readBSIRange(tx, kind, shard, m.Get(MetricsType), bitmaps.EQ, int64(Histogram), 0)
-		if err != nil {
-			return err
-		}
-
-		// metric samples can either be histograms or floats.
-		ra = ra.Intersect(float.Union(histogram))
-		if !ra.Any() {
-			return nil
-		}
-
-		return readSeries(result, m, tx, records, shard, ra)
+	return db.read(vs, start, end, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, m *meta) error {
+		return readSeries(result, m, tx, records, ra)
 	})
-
 }
 
-func (db *Store) read(vs *view, cb func(tx *rbf.Tx, records *rbf.Records, m *meta) error) error {
-	tx, err := db.db.Begin(false)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	records, err := tx.RootRecords()
-	if err != nil {
-		return err
-	}
-	for i := range vs.meta {
-		err := cb(tx, records, &vs.meta[i])
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (db *Store) read2(vs *view, sa *samples.Samples, start, end int64, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, m *meta) error) error {
+func (db *Store) read(vs *view, start, end int64, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, m *meta) error) error {
 	tx, err := db.db.Begin(false)
 	if err != nil {
 		return err
