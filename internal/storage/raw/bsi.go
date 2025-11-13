@@ -3,7 +3,6 @@ package raw
 import (
 	"math/bits"
 	"slices"
-	"sync"
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/roaring"
@@ -14,13 +13,10 @@ type BSI struct {
 	exists *roaring.Bitmap
 	sign   *roaring.Bitmap
 	data   []*roaring.Bitmap
-	mu     sync.Mutex
 }
 
 // From converts rbf BSI data into b for the given filter columns.
 func (b *BSI) From(tx bitmaps.OffsetRanger, shard uint64, bitDepth uint8, filter *roaring.Bitmap) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	exists, err := bitmaps.Row(tx, shard, 0)
 	if err != nil {
