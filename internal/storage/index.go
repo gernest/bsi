@@ -205,8 +205,10 @@ func (m *meta) Get(col uint64) uint8 {
 }
 
 func (s *data) Index(id uint64, value tsid.ID) {
-	for i := range value {
-		s.add(value[i].ID, id, int64(value[i].Value))
+	s.add(value[0].ID, id, int64(value[0].Value))
+	metricID := value[0].Value
+	for i := 1; i < len(value); i++ {
+		bitmaps.Mutex(s.get(value[i].ID), metricID, value[i].Value)
 	}
 }
 

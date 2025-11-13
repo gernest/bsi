@@ -28,3 +28,16 @@ func BSI(ra *roaring.Bitmap, id uint64, signedValue int64) {
 		row++
 	}
 }
+
+// Mutex (id, value[0]), (id, value[1])  .... as MUTEX into ra.
+func Mutex(ra *roaring.Bitmap, id uint64, value ...uint64) {
+	for i := range value {
+		if value[i] == 0 {
+			continue
+		}
+		ra.DirectAdd(
+			value[i]*shardwidth.ShardWidth +
+				(id % shardwidth.ShardWidth),
+		)
+	}
+}
