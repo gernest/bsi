@@ -1,13 +1,7 @@
 package storage
 
 import (
-	"cmp"
 	"fmt"
-	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
@@ -39,7 +33,6 @@ type partitionShard struct {
 // All data for view is read from txt database. Think of this as a guideline on
 // what to read from rbf storage.
 type view struct {
-	meta []meta
 	// when provided  applies an intersection of all match
 	match []match
 	// when provided applies a union of intersecting []match.
@@ -57,94 +50,12 @@ func (m *match) Column() uint64 {
 }
 
 func (v *view) Reset() *view {
-	v.meta = v.meta[:0]
 	v.match = v.match[:0]
 	v.matchAny = v.matchAny[:0]
 	return v
 }
 
-// batch builds rbf containers in memory to allow much faster batch ingestion via
-// (*rbf.Tx)AddRoaring call. We automatically organize bitmaps in shards.
-type batch map[uint64]*data
-
-type yyyyMM struct {
-	year  int
-	month time.Month
-}
-
-func (y *yyyyMM) Compare(o *yyyyMM) int {
-	x := cmp.Compare(y.year, o.year)
-	if x != 0 {
-		return x
-	}
-	return cmp.Compare(y.month, o.month)
-}
-
-type shardYM struct {
-	shard uint64
-	ym    yyyyMM
-}
-
-func (s shardYM) String() string {
-	return partitionPath("", s)
-}
-
-func partitionKey(t int64) yyyyMM {
-	yy, mm, _ := time.UnixMilli(t).Date()
-	return yyyyMM{year: yy, month: mm}
-}
-
-func parsePartitionKey(k string) (yyyyMM, error) {
-	y, m, ok := strings.Cut(k, "_")
-	if !ok {
-		return yyyyMM{}, fmt.Errorf("invalid partition key")
-	}
-	yy, err := strconv.Atoi(y)
-	if err != nil {
-		return yyyyMM{}, fmt.Errorf("invalid partition year %w", err)
-	}
-	mm, err := strconv.Atoi(m)
-	if err != nil {
-		return yyyyMM{}, fmt.Errorf("invalid partition month %w", err)
-	}
-	return yyyyMM{year: yy, month: time.Month(mm)}, nil
-}
-
-func partitionPath(base string, ym shardYM) string {
-	return filepath.Join(base, ym.ym.String(), fmt.Sprintf("%06d", ym.shard))
-}
-
-func (y yyyyMM) String() string {
-	return fmt.Sprintf("%04d_%02d", y.year, y.month)
-}
-
 type data map[rbf.Key]*roaring.Bitmap
-
-// meta  is in memory metadata about rbf shard.
-type meta struct {
-	depth []bounds
-	shard uint64
-	year  uint16
-	month uint8
-	full  bool
-}
-
-func (m *meta) Key(col uint64) rbf.Key {
-	return rbf.Key{
-		Column: col,
-		Shard:  m.shard,
-	}
-}
-
-func (m *meta) Get(col uint64) uint8 {
-	i, ok := slices.BinarySearchFunc(m.depth, bounds{col: col}, func(i, j bounds) int {
-		return cmp.Compare(i.col, j.col)
-	})
-	if ok {
-		return m.depth[i].minMax.depth()
-	}
-	return 0
-}
 
 func (s data) Index(id uint64, value tsid.ID) {
 	s.bsi(value[0].ID, id, int64(value[0].Value))

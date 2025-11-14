@@ -9,6 +9,10 @@ import (
 
 // Stats returns database stats.
 func (db *Store) Stats(statsByLabelName string, _ int) (result *tsdb.Stats, err error) {
+	lo, hi, err := db.MinMax()
+	if err != nil {
+		return nil, err
+	}
 	err = db.txt.View(func(tx *bbolt.Tx) error {
 		dataB := tx.Bucket(metaData)
 		dataI := dataB.Inspect()
@@ -16,8 +20,8 @@ func (db *Store) Stats(statsByLabelName string, _ int) (result *tsdb.Stats, err 
 			NumSeries: uint64(dataI.KeyN),
 		}
 
-		result.MinTime = minimumTs(tx)
-		result.MaxTime = maximumTs(tx)
+		result.MinTime = lo
+		result.MaxTime = hi
 
 		indexB := tx.Bucket(search)
 		cu := indexB.Cursor()

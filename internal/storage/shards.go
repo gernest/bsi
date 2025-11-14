@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"iter"
 	"slices"
 
@@ -23,7 +22,6 @@ func (db *Store) findShards(vs *view, matchers []*labels.Matcher) (err error) {
 		vs.match = slices.Collect(find(tx, matchers))
 		return nil
 	})
-
 }
 
 func (db *Store) findShardsAmy(vs *view, matchers [][]*labels.Matcher) (err error) {
@@ -108,35 +106,4 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 
 		}
 	}
-}
-
-func findPartitions(tx *bbolt.Tx, start, end int64, vs *view) error {
-	adminB := tx.Bucket(admin)
-	acu := adminB.Cursor()
-	lo := []byte(partitionKey(start).String())
-	hi := []byte(partitionKey(end).String())
-
-	// Top level buckets are for partitions
-	for name, value := acu.Seek(lo); name != nil && value == nil && bytes.Compare(name, hi) < 1; name, value = acu.Next() {
-
-		key, err := parsePartitionKey(magic.String(name))
-		if err != nil {
-			return fmt.Errorf("parsing partition %w", err)
-		}
-		cu := adminB.Bucket(name).Cursor()
-
-		for k, v := cu.First(); v != nil; k, v = cu.Next() {
-
-			o := magic.ReinterpretSlice[bounds](v)
-			if o[0].minMax.InRange(start, end) {
-				vs.meta = append(vs.meta, meta{
-					depth: slices.Clone(o),
-					shard: binary.BigEndian.Uint64(k),
-					year:  uint16(key.year),
-					month: uint8(key.month),
-				})
-			}
-		}
-	}
-	return nil
 }

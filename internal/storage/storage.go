@@ -4,14 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"path/filepath"
 	"sync/atomic"
 
+	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/bsi/internal/storage/tsid"
+	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
 )
@@ -111,44 +113,63 @@ func (db *Store) Close() error {
 
 // MinTs returns the lowest timestamp currently observed in the database.
 func (db *Store) MinTs() (ts int64, err error) {
-	err = db.txt.View(func(tx *bbolt.Tx) error {
-		ts = minimumTs(tx)
-		return nil
-	})
+	ts, _, err = db.MinMax()
 	return
-}
-
-func minimumTs(tx *bbolt.Tx) int64 {
-	adminB := tx.Bucket(admin)
-	k, _ := adminB.Cursor().First()
-	if k != nil {
-		_, v := adminB.Bucket(k).Cursor().First()
-		if v != nil {
-			return magic.ReinterpretSlice[bounds](v)[0].minMax.min
-		}
-	}
-	return 0
 }
 
 // MaxTs returns the highest timestamp currently observed in the database.
 func (db *Store) MaxTs() (ts int64, err error) {
-	err = db.txt.View(func(tx *bbolt.Tx) error {
-		ts = maximumTs(tx)
-		return nil
-	})
+	_, ts, err = db.MinMax()
 	return
 }
 
-func maximumTs(tx *bbolt.Tx) int64 {
-	adminB := tx.Bucket(admin)
-	k, _ := adminB.Cursor().Last()
-	if k != nil {
-		_, v := adminB.Bucket(k).Cursor().Last()
-		if v != nil {
-			return magic.ReinterpretSlice[bounds](v)[0].minMax.max
+func (db *Store) MinMax() (lo, hi int64, err error) {
+	tx, err := db.db.Begin(false)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	records, err := tx.RootRecords()
+	if err != nil {
+		return 0, 0, err
+	}
+	it := records.Iterator()
+	{
+		// first timestamp column
+		it.Seek(rbf.Key{Column: MetricsTimestamp})
+		name, page, ok := it.Next()
+		if !ok || name.Column != MetricsTimestamp {
+			return 0, 0, nil
+		}
+
+		cu := tx.CursorFromRoot(page)
+		defer cu.Close()
+		vx, _ := cu.Max()
+		depth := vx / shardwidth.ShardWidth
+		lo, _, err = bitmaps.Min(cu, nil, name.Shard, depth)
+		if err != nil {
+			return
 		}
 	}
-	return 0
+	{
+		// first timestamp column
+		it.Seek(rbf.Key{Column: MetricsTimestamp, Shard: math.MaxUint64})
+		name, page, ok := it.Next()
+		if !ok || name.Column != MetricsTimestamp {
+			name, page, ok = it.Prev()
+			if !ok || name.Column != MetricsTimestamp {
+				return 0, 0, nil
+			}
+		}
+
+		cu := tx.CursorFromRoot(page)
+		defer cu.Close()
+		vx, _ := cu.Max()
+		depth := vx / shardwidth.ShardWidth
+		hi, _, err = bitmaps.Max(cu, nil, name.Shard, depth)
+	}
+	return
 }
 
 // AddRows index and store rows.

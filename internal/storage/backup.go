@@ -30,10 +30,9 @@ func (db *Store) Snapshot(dir string) error {
 }
 
 func (db *Store) snapshot(base string) error {
-
 	err := db.txt.View(func(tx *bbolt.Tx) error {
 		// copy local txt database state
-		path := filepath.Join(base, filepath.Base(db.txt.Path()))
+		path := filepath.Join(base, "txt")
 		f, err := os.Create(path)
 		if err != nil {
 			return fmt.Errorf("creating txt snapshot file %w", err)
@@ -43,11 +42,20 @@ func (db *Store) snapshot(base string) error {
 		if err != nil {
 			return fmt.Errorf("writing txt file %w", err)
 		}
-
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	path := filepath.Join(base, "data")
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating txt snapshot file %w", err)
+	}
+	err = db.db.Backup(f)
+	f.Close()
+	if err != nil {
+		return fmt.Errorf("writing rbf database $w", err)
 	}
 	return nil
 }
