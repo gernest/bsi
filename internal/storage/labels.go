@@ -72,13 +72,9 @@ func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(na
 	shards := shardsPool.Get()
 	defer shardsPool.Put(shards)
 
-	err := db.findShards(shards, start, end, matchers)
+	err := db.findShards(shards, matchers)
 	if err != nil {
 		return err
-	}
-
-	if shards.IsEmpty() {
-		return nil
 	}
 
 	var result samples.Samples

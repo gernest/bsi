@@ -13,16 +13,6 @@ import (
 // Row is a set of integers (the associated columns).
 type Row struct {
 	Segments []RowSegment
-
-	// Column tells what field this row is from if it's a "vertical"
-	// row. It may be the result of a Distinct query or Rows
-	// query. Knowing the index and field, we can figure out how to
-	// interpret the row data.
-	Column uint64
-
-	// NoSplit indicates that this row may not be split.
-	// This is used for `Rows` calls in a GroupBy.
-	NoSplit bool
 }
 
 // NewRow returns a new instance of Row.
@@ -39,9 +29,7 @@ func (r *Row) Clone() (clone *Row) {
 		return nil
 	}
 
-	clone = &Row{
-		Column: r.Column,
-	}
+	clone = &Row{}
 
 	for _, seg := range r.Segments {
 		segClone := RowSegment{
@@ -263,7 +251,7 @@ func (r *Row) Union(others ...*Row) *Row {
 			output = append(output, *toProcess[0].Union(toProcess[1:]...))
 		}
 	}
-	return &Row{Column: r.Column, Segments: output}
+	return &Row{Segments: output}
 }
 
 // Difference returns the diff of r and other.
@@ -388,6 +376,10 @@ type RowSegment struct {
 
 func (s *RowSegment) Shard() uint64 {
 	return s.shard
+}
+
+func (s *RowSegment) Data() *roaring.Bitmap {
+	return s.data
 }
 
 func (s *RowSegment) Freeze() {

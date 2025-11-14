@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/roaring"
@@ -13,7 +12,7 @@ import (
 func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	shards := shardsPool.Get()
 	defer shardsPool.Put(shards)
-	err := db.findShardsAmy(shards, start, end, matchers)
+	err := db.findShardsAmy(shards, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -35,21 +34,7 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 
 func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int64) error {
 
-	return db.read(vs, start, end, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, m *meta) error {
-
-		kind, ok := records.Get(m.Key(MetricsType))
-		if !ok {
-			panic("missing metric type root records")
-		}
-		exe, err := readBSIRange(tx, kind, m.shard, m.Get(MetricsType), bitmaps.EQ, int64(Exemplar), 0)
-		if err != nil {
-			return err
-		}
-
-		ra = ra.Intersect(exe)
-		if !ra.Any() {
-			return nil
-		}
-		return readExemplars(result, m, tx, records, ra)
+	return db.read(vs, start, end, true, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
+		return readExemplars(result, tx, records, shard, ra)
 	})
 }

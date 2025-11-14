@@ -9,6 +9,7 @@ import (
 
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/storage/magic"
+	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
 )
@@ -17,32 +18,16 @@ var shardsPool = pools.Pool[*view]{Init: viewsItems{}}
 
 // Search for all shards that have timestamps within the start and end range. To avoid opeting
 // another database transaction, we also decode matchers for searching in our RBF storage.
-func (db *Store) findShards(vs *view, start, end int64, matchers []*labels.Matcher) (err error) {
+func (db *Store) findShards(vs *view, matchers []*labels.Matcher) (err error) {
 	return db.txt.View(func(tx *bbolt.Tx) error {
-		err := findPartitions(tx, start, end, vs)
-		if err != nil {
-			return err
-		}
-		if len(vs.meta) == 0 {
-			return nil
-		}
 		vs.match = slices.Collect(find(tx, matchers))
 		return nil
 	})
 
 }
 
-func (db *Store) findShardsAmy(vs *view, start, end int64, matchers [][]*labels.Matcher) (err error) {
-	vs = shardsPool.Get()
-
+func (db *Store) findShardsAmy(vs *view, matchers [][]*labels.Matcher) (err error) {
 	return db.txt.View(func(tx *bbolt.Tx) error {
-		err := findPartitions(tx, start, end, vs)
-		if err != nil {
-			return err
-		}
-		if len(vs.meta) == 0 {
-			return nil
-		}
 		for i := range matchers {
 			vs.matchAny = append(vs.matchAny, slices.Collect(find(tx, matchers[i])))
 		}
@@ -61,24 +46,24 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			switch m.Type {
 			case labels.MatchEqual:
 				b, _ := cu.Seek(magic.Slice(m.Name))
-				var va uint64
+				ra := roaring.NewBitmap()
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
 					if value != nil {
-						va = binary.BigEndian.Uint64(value)
+						ra.DirectAdd(binary.BigEndian.Uint64(value))
 					}
 				}
 				ma := match{
 					column: m.Name,
-					rows:   []uint64{va},
+					rows:   ra,
 				}
 				if !yield(ma) {
 					return
 				}
 			case labels.MatchRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
-				values := make([]uint64, 0, 64)
+				ra := roaring.NewBitmap()
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
@@ -86,13 +71,13 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix); a, b = mc.Next() {
 						if m.Matches(magic.String(a)) {
 							va := binary.BigEndian.Uint64(b)
-							values = append(values, va)
+							ra.DirectAdd(va)
 						}
 					}
 				}
 				ma := match{
 					column: m.Name,
-					rows:   values,
+					rows:   ra,
 				}
 				if !yield(ma) {
 					return
@@ -100,20 +85,20 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 
 			case labels.MatchNotEqual, labels.MatchNotRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
-				values := make([]uint64, 0, 64)
+				ra := roaring.NewBitmap()
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					mc := mb.Cursor()
 					for a, b := mc.First(); b != nil; a, b = mc.Next() {
 						if m.Matches(magic.String(a)) {
 							va := binary.BigEndian.Uint64(b)
-							values = append(values, va)
+							ra.DirectAdd(va)
 						}
 					}
 				}
 				ma := match{
 					column: m.Name,
-					rows:   values,
+					rows:   ra,
 				}
 				if !yield(ma) {
 					return

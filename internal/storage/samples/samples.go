@@ -43,7 +43,7 @@ type Samples struct {
 	SeriesData map[uint64][]byte
 	Data       map[uint64][]byte
 	ls         []uint64
-	KindBSI    raw.BSI
+	KindBSI    [4]*roaring.Bitmap
 	LabelsBSI  raw.BSI
 	TsBSI      raw.BSI
 	ValuesBSI  raw.BSI
@@ -65,19 +65,9 @@ func (s *Samples) Init() {
 	s.LabelsBSI.Init()
 	s.TsBSI.Init()
 	s.ValuesBSI.Init()
-	s.KindBSI.Init()
-}
-
-// Reset clears s for reuse.
-func (s *Samples) Reset() {
-	s.LabelsBSI.Reset()
-	s.TsBSI.Reset()
-	s.ValuesBSI.Reset()
-	clear(s.Series)
-	clear(s.SeriesData)
-	clear(s.Data)
-	s.KindBSI.Reset()
-	s.ls = s.ls[:0]
+	for i := range s.KindBSI {
+		s.KindBSI[i] = roaring.NewBitmap()
+	}
 }
 
 // MakeSeries iterates all sample series and yields labels.
@@ -143,7 +133,9 @@ func (s *Samples) Make() storage.SeriesSet {
 	// We may have s stay in memory much longer depending on PromQL. We ensure
 	// small memory footprint is occupied.
 	s.LabelsBSI.Reset() // we never use this again.
-	s.KindBSI.Optimize()
+	for i := range s.KindBSI {
+		s.KindBSI[i].Optimize()
+	}
 	s.TsBSI.Optimize()
 	s.ValuesBSI.Optimize()
 	return s
@@ -235,19 +227,17 @@ func (i *Iter) Next() chunkenc.ValueType {
 		i.typ = chunkenc.ValNone
 		return i.typ
 	}
-	kind, ok := i.s.s.KindBSI.GetValue(i.ts.ID[i.idx])
-	if !ok {
-		panic(fmt.Sprintf("missing metric type at %d", i.ts.ID[i.idx]))
-	}
-	switch kind {
-	case 1:
+	kind := i.s.s.KindBSI
+	id := i.ts.ID[i.idx]
+	switch {
+	case kind[0].Contains(id):
 		i.typ = chunkenc.ValFloat
-	case 2:
+	case kind[1].Contains(id):
 		i.typ = chunkenc.ValHistogram
-	case 3:
+	case kind[2].Contains(id):
 		i.typ = chunkenc.ValFloatHistogram
 	default:
-		panic(fmt.Sprintf("unknown metric type %d", kind))
+		panic(fmt.Sprintf("unknown metric type at column %d", id))
 	}
 	return i.typ
 }
