@@ -1,20 +1,18 @@
 package storage
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/magic"
 	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/bsi/internal/storage/tsid"
-	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
 )
@@ -165,12 +163,11 @@ func (db *Store) AddRows(rows *Rows) error {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
 
-	ma := make(partitions)
+	ma := make(data)
 
 	lo := hi - uint64(rows.Size())
 
 	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
-		shard := se.Lo / shardwidth.ShardWidth
 		offset := start + int(se.Hi-se.Lo)
 		for i := range offset - start {
 			if rows.Kind[i] == None {
@@ -178,20 +175,15 @@ func (db *Store) AddRows(rows *Rows) error {
 			}
 			idx := start + i
 			id := se.Lo + uint64(idx)
-			ba := ma.get(shard, rows.Timestamp[idx])
-			ba.Timestamp(id, rows.Timestamp[idx])
-			ba.Value(id, rows.Value[idx])
-			ba.Kind(id, rows.Kind[idx])
-			ba.Index(id, ids.B[idx])
+			yy, mm, _ := time.UnixMilli(rows.Timestamp[idx]).Date()
+			ma.Timestamp(yy, mm, id, rows.Timestamp[idx])
+			ma.Value(yy, mm, id, rows.Value[idx])
+			ma.Kind(yy, mm, id, rows.Kind[idx])
+			ma.Index(yy, mm, id, ids.B[idx])
 		}
-
 	}
 
 	err = db.apply(ma)
-	if err != nil {
-		return err
-	}
-	err = db.saveMetadata(ma)
 	if err != nil {
 		return err
 	}
@@ -202,47 +194,18 @@ func (db *Store) AddRows(rows *Rows) error {
 	return nil
 }
 
-func (db *Store) saveMetadata(ma partitions) error {
-	var key [8]byte
-	return db.txt.Update(func(tx *bbolt.Tx) error {
-		adminB := tx.Bucket(admin)
-		for k, v := range ma {
-			pa, err := adminB.CreateBucketIfNotExists([]byte(k.String()))
-			if err != nil {
-				return fmt.Errorf("getting partition=%v %w", k, err)
-			}
-			cu := pa.Cursor()
-			for shard, data := range v {
-				binary.BigEndian.PutUint64(key[:], shard)
-				if k, v := cu.Seek(key[:]); v != nil && bytes.Equal(k, key[:]) {
-					updateBounds(data.meta, v)
-				}
-				out := buildBounds(data.meta)
-				err := pa.Put(key[:], magic.ReinterpretSlice[byte](out))
-				if err != nil {
-					return fmt.Errorf("updating shard=%d view=%s data %w", shard, k, err)
-				}
-			}
-		}
-		return nil
-	})
-}
-
-func (db *Store) apply(ma partitions) error {
+func (db *Store) apply(ma data) error {
 	tx, err := db.db.Begin(true)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for pa, ba := range ma {
-		for sha, da := range ba {
-			for co, ra := range da.columns {
-				ra.Optimize()
-				_, err := tx.AddRoaring(rbf.Key{Column: co, Shard: sha, Year: uint16(pa.year), Month: uint8(pa.month)}, ra)
-				if err != nil {
-					return err
-				}
-			}
+
+	for co, ra := range ma {
+		ra.Optimize()
+		_, err := tx.AddRoaring(co, ra)
+		if err != nil {
+			return err
 		}
 	}
 	return tx.Commit()

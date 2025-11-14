@@ -17,12 +17,8 @@ import (
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/samples"
 	"github.com/gernest/bsi/internal/storage/tsid"
-	"github.com/gernest/bsi/internal/storage/work"
 	"github.com/gernest/roaring"
-)
-
-var (
-	workPool = pools.Pool[*partitionShardWork]{Init: workItems{}}
+	"github.com/gernest/roaring/shardwidth"
 )
 
 type viewsItems struct{}
@@ -37,20 +33,6 @@ type partitionShard struct {
 	Partition uint16
 	Shard     uint16
 }
-
-type partitionShardWork = work.Work[partitionShard]
-
-type workItems struct{}
-
-func (workItems) Init() *partitionShardWork {
-	return new(partitionShardWork)
-}
-
-func (workItems) Reset(v *partitionShardWork) *partitionShardWork {
-	return v.Reset()
-}
-
-var _ pools.Items[*partitionShardWork] = (*workItems)(nil)
 
 // view is like a posting list with all shards that might contain data. This also
 // contains translation of label matchers which is shard agnostic.
@@ -141,40 +123,7 @@ func (y yyyyMM) String() string {
 	return fmt.Sprintf("%04d_%02d", y.year, y.month)
 }
 
-type partitions map[yyyyMM]batch
-
-func (pa partitions) get(shard uint64, ts int64) *data {
-	yy, mm, _ := time.UnixMilli(ts).Date()
-	key := yyyyMM{
-		year: yy, month: mm,
-	}
-	ba, ok := pa[key]
-	if !ok {
-		ba = make(batch)
-		pa[key] = ba
-	}
-	return ba.Get(shard)
-}
-
-func (s batch) Get(shard uint64) *data {
-	r, ok := s[shard]
-	if !ok {
-		r = &data{
-			columns: make(map[uint64]*roaring.Bitmap),
-			meta:    make(map[uint64]*minMax),
-		}
-		s[shard] = r
-	}
-	return r
-}
-
-// data holds all columns bitmaps and metadata for a single shard. Columns contains
-// both core (timestamp, value, kind) and indexed columns which are xxhash of the
-// label names.
-type data struct {
-	columns map[uint64]*roaring.Bitmap
-	meta    map[uint64]*minMax
-}
+type data map[rbf.Key]*roaring.Bitmap
 
 // meta  is in memory metadata about rbf shard.
 type meta struct {
@@ -204,44 +153,42 @@ func (m *meta) Get(col uint64) uint8 {
 	return 0
 }
 
-func (s *data) Index(id uint64, value tsid.ID) {
-	s.add(value[0].ID, id, int64(value[0].Value))
+func (s data) Index(yy int, mm time.Month, id uint64, value tsid.ID) {
+	s.bsi(yy, mm, value[0].ID, id, int64(value[0].Value))
 	metricID := value[0].Value
 	for i := 1; i < len(value); i++ {
-		bitmaps.Mutex(s.get(value[i].ID), metricID, value[i].Value)
+		s.mutex(yy, mm, value[i].ID, metricID, value[i].Value)
 	}
 }
 
-func (s *data) Timestamp(id uint64, value int64) {
-	s.add(MetricsTimestamp, id, value)
+func (s data) Timestamp(yy int, mm time.Month, id uint64, value int64) {
+	s.bsi(yy, mm, MetricsTimestamp, id, value)
 }
 
-func (s *data) Value(id uint64, value uint64) {
-	s.add(MetricsValue, id, int64(value))
+func (s data) Value(yy int, mm time.Month, id uint64, value uint64) {
+	s.bsi(yy, mm, MetricsValue, id, int64(value))
 }
 
-func (s *data) Kind(id uint64, value Kind) {
-	s.add(MetricsType, id, int64(value))
+func (s data) Kind(yy int, mm time.Month, id uint64, value Kind) {
+	s.mutex(yy, mm, MetricsType, id, uint64(value))
 }
 
-func (s *data) add(col uint64, id uint64, val int64) {
-	bitmaps.BSI(s.get(col), id, val)
-	x, ok := s.meta[col]
-	if !ok {
-		s.meta[col] = &minMax{
-			min: val,
-			max: val,
-		}
-		return
-	}
-	x.set(val)
+func (s data) bsi(yy int, mm time.Month, col uint64, id uint64, val int64) {
+	shard := id / shardwidth.ShardWidth
+	bitmaps.BSI(s.get(yy, mm, shard, col), id, val)
 }
 
-func (s *data) get(col uint64) *roaring.Bitmap {
-	r, ok := s.columns[col]
+func (s data) mutex(yy int, mm time.Month, col uint64, id uint64, val uint64) {
+	shard := id / shardwidth.ShardWidth
+	bitmaps.Mutex(s.get(yy, mm, shard, col), id, val)
+}
+
+func (s data) get(yy int, mm time.Month, shard, col uint64) *roaring.Bitmap {
+	kx := rbf.Key{Column: col, Shard: shard, Year: uint16(yy), Month: uint8(mm)}
+	r, ok := s[kx]
 	if !ok {
 		r = roaring.NewMapBitmap()
-		s.columns[col] = r
+		s[kx] = r
 	}
 	return r
 }
