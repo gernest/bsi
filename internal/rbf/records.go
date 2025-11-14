@@ -73,11 +73,11 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := cmp.Compare(a.Shard, b.Shard)
+	i := cmp.Compare(a.Column, b.Column)
 	if i != 0 {
 		return i
 	}
-	return cmp.Compare(a.Column, b.Column)
+	return cmp.Compare(a.Shard, b.Shard)
 }
 
 type Size struct {
