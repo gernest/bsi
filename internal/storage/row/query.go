@@ -68,6 +68,44 @@ func bsi(tx *rbf.Tx, root uint32, shard uint64, op bitmaps.OP, predicate, end in
 	return nil
 }
 
+func Eq(tx *rbf.Tx, records *rbf.Records, limit Limit, col uint64, values *roaring.Bitmap) (*roaring.Bitmap, error) {
+	it := records.Iterator()
+	result := roaring.NewBitmap()
+	for it.Seek(rbf.Key{Column: col, Shard: limit.StartShard}); !it.Done(); {
+		name, page, ok := it.Next()
+		if !ok || name.Column != col || name.Shard >= limit.EndShard {
+			break
+		}
+		err := bsiEq(tx, page, name.Shard, values, func(ra *roaring.Bitmap) {
+			result = result.Union(ra)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func bsiEq(tx *rbf.Tx, root uint32, shard uint64, values *roaring.Bitmap, cb func(ra *roaring.Bitmap)) error {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	mx, err := cu.Max()
+	if err != nil {
+		return err
+	}
+	depth := mx / shardwidth.ShardWidth
+
+	for predicate := range values.RangeAll() {
+		ra, err := bitmaps.Range(cu, bitmaps.EQ, shard, depth, int64(predicate), 0)
+		if err != nil {
+			return err
+		}
+		cb(ra)
+	}
+	return nil
+}
+
 // Mutex search all shards for column for mutex encoded rows.
 func Mutex(tx *rbf.Tx, records *rbf.Records, limit Limit, col uint64, rows *roaring.Bitmap) (*roaring.Bitmap, error) {
 	it := records.Iterator()

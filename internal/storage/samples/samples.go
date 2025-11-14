@@ -127,6 +127,7 @@ func (s *Samples) Make() storage.SeriesSet {
 	s.ls = s.ls[:0]
 	for v := range s.Series {
 		s.ls = append(s.ls, v)
+		fmt.Println(v, buffer.WrapLabel(s.SeriesData[v]))
 	}
 	slices.Sort(s.ls)
 

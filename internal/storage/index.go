@@ -215,9 +215,10 @@ func (db *Store) read(vs *view, start, end int64, exemplar bool, cb func(tx *rbf
 	if err != nil {
 		return err
 	}
+	fmt.Println(series.Slice())
 
 	// 3. select column ids matching series, limit to valid shards found in ts
-	filter, err := row.Mutex(tx, records, ts.Limit(), MetricsLabels, series)
+	filter, err := row.Eq(tx, records, ts.Limit(), MetricsLabels, series)
 	if err != nil {
 		return err
 	}
@@ -238,7 +239,6 @@ func (db *Store) read(vs *view, start, end int64, exemplar bool, cb func(tx *rbf
 
 	// 4. intersect time range with filter to get matching column ids.
 	match := ts.Intersect(row.NewRowFromBitmap(filter))
-
 	// matching logic is is complete now. After this only reading is done.
 	if !match.Any() {
 		// fast path: nothing matched return early.
