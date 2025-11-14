@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"fmt"
-
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
@@ -126,7 +124,6 @@ func (db *Store) read(vs *view, start, end int64, exemplar bool, cb func(tx *rbf
 	if err != nil {
 		return err
 	}
-	fmt.Println(series.Slice())
 
 	// 3. select column ids matching series, limit to valid shards found in ts
 	filter, err := row.Eq(tx, records, ts.Limit(), MetricsLabels, series)
