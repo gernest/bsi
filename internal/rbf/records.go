@@ -19,8 +19,6 @@ type Records = immutable.SortedMap[Key, uint32]
 type Key struct {
 	Column uint64
 	Shard  uint64
-	Year   uint16
-	Month  uint8
 }
 
 var zero Key
@@ -30,23 +28,19 @@ func (k Key) IsEmpty() bool {
 }
 
 func (k Key) String() string {
-	return fmt.Sprintf("%04d_%02d_%06d_%06d", k.Year, k.Month, k.Shard, k.Column)
+	return fmt.Sprintf("%06d_%06d", k.Shard, k.Column)
 }
 
 type Record struct {
 	Column uint64
 	Shard  uint64
 	Page   uint32
-	Year   uint16
-	Month  uint8
 }
 
 func (r *Record) Key() Key {
 	return Key{
 		Column: r.Column,
 		Shard:  r.Shard,
-		Year:   r.Year,
-		Month:  r.Month,
 	}
 }
 
@@ -79,15 +73,7 @@ func ReadRecord(data []byte) (rec Record, remaining []byte, err error) {
 type CompareRecord struct{}
 
 func (CompareRecord) Compare(a, b Key) int {
-	i := cmp.Compare(a.Year, b.Year)
-	if i != 0 {
-		return i
-	}
-	i = cmp.Compare(a.Month, b.Month)
-	if i != 0 {
-		return i
-	}
-	i = cmp.Compare(a.Shard, b.Shard)
+	i := cmp.Compare(a.Shard, b.Shard)
 	if i != 0 {
 		return i
 	}

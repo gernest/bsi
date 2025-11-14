@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync/atomic"
-	"time"
 
 	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
@@ -175,11 +174,10 @@ func (db *Store) AddRows(rows *Rows) error {
 			}
 			idx := start + i
 			id := se.Lo + uint64(idx)
-			yy, mm, _ := time.UnixMilli(rows.Timestamp[idx]).Date()
-			ma.Timestamp(yy, mm, id, rows.Timestamp[idx])
-			ma.Value(yy, mm, id, rows.Value[idx])
-			ma.Kind(yy, mm, id, rows.Kind[idx])
-			ma.Index(yy, mm, id, ids.B[idx])
+			ma.Timestamp(id, rows.Timestamp[idx])
+			ma.Value(id, rows.Value[idx])
+			ma.Kind(id, rows.Kind[idx])
+			ma.Index(id, ids.B[idx])
 		}
 	}
 

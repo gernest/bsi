@@ -138,8 +138,6 @@ func (m *meta) Key(col uint64) rbf.Key {
 	return rbf.Key{
 		Column: col,
 		Shard:  m.shard,
-		Year:   m.year,
-		Month:  m.month,
 	}
 }
 
@@ -153,38 +151,38 @@ func (m *meta) Get(col uint64) uint8 {
 	return 0
 }
 
-func (s data) Index(yy int, mm time.Month, id uint64, value tsid.ID) {
-	s.bsi(yy, mm, value[0].ID, id, int64(value[0].Value))
+func (s data) Index(id uint64, value tsid.ID) {
+	s.bsi(value[0].ID, id, int64(value[0].Value))
 	metricID := value[0].Value
 	for i := 1; i < len(value); i++ {
-		s.mutex(yy, mm, value[i].ID, metricID, value[i].Value)
+		s.mutex(value[i].ID, metricID, value[i].Value)
 	}
 }
 
-func (s data) Timestamp(yy int, mm time.Month, id uint64, value int64) {
-	s.bsi(yy, mm, MetricsTimestamp, id, value)
+func (s data) Timestamp(id uint64, value int64) {
+	s.bsi(MetricsTimestamp, id, value)
 }
 
-func (s data) Value(yy int, mm time.Month, id uint64, value uint64) {
-	s.bsi(yy, mm, MetricsValue, id, int64(value))
+func (s data) Value(id uint64, value uint64) {
+	s.bsi(MetricsValue, id, int64(value))
 }
 
-func (s data) Kind(yy int, mm time.Month, id uint64, value Kind) {
-	s.mutex(yy, mm, MetricsType, id, uint64(value))
+func (s data) Kind(id uint64, value Kind) {
+	s.mutex(MetricsType, id, uint64(value))
 }
 
-func (s data) bsi(yy int, mm time.Month, col uint64, id uint64, val int64) {
+func (s data) bsi(col uint64, id uint64, val int64) {
 	shard := id / shardwidth.ShardWidth
-	bitmaps.BSI(s.get(yy, mm, shard, col), id, val)
+	bitmaps.BSI(s.get(shard, col), id, val)
 }
 
-func (s data) mutex(yy int, mm time.Month, col uint64, id uint64, val uint64) {
+func (s data) mutex(col uint64, id uint64, val uint64) {
 	shard := id / shardwidth.ShardWidth
-	bitmaps.Mutex(s.get(yy, mm, shard, col), id, val)
+	bitmaps.Mutex(s.get(shard, col), id, val)
 }
 
-func (s data) get(yy int, mm time.Month, shard, col uint64) *roaring.Bitmap {
-	kx := rbf.Key{Column: col, Shard: shard, Year: uint16(yy), Month: uint8(mm)}
+func (s data) get(shard, col uint64) *roaring.Bitmap {
+	kx := rbf.Key{Column: col, Shard: shard}
 	r, ok := s[kx]
 	if !ok {
 		r = roaring.NewMapBitmap()
@@ -361,13 +359,9 @@ func rangeShards(records *rbf.Records, col uint64, year uint16, month uint8) ite
 	it := records.Iterator()
 	lo := rbf.Key{
 		Column: col,
-		Year:   year,
-		Month:  month,
 	}
 	hi := rbf.Key{
 		Column: col,
-		Year:   year,
-		Month:  month,
 		Shard:  math.MaxUint64,
 	}
 	return func(yield func(uint64, uint32) bool) {
