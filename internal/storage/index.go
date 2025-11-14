@@ -41,8 +41,8 @@ type view struct {
 }
 
 type match struct {
-	column string
 	rows   *roaring.Bitmap
+	column string
 }
 
 func (m *match) Column() uint64 {
