@@ -5,11 +5,13 @@ import (
 	"math"
 
 	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Rows is an in memory batch of metrics belonging to a single view.
 type Rows struct {
+	ID        []tsid.ID
 	Labels    [][]byte
 	Timestamp []int64
 	Value     []uint64
@@ -93,6 +95,7 @@ func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
 
 // Reset resets r fields and retain capacity.
 func (r *Rows) Reset() {
+	r.ID = r.ID[:0]
 	r.Labels = reset(r.Labels)
 	r.Timestamp = reset(r.Timestamp)
 	r.Value = reset(r.Value)

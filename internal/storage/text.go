@@ -27,10 +27,10 @@ var (
 	search        = []byte("index")
 )
 
-func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
+func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 
 	size := len(r.Labels)
-	out.B = make([]tsid.ID, size)
+	r.ID = slices.Grow(r.ID, size)[:size]
 
 	err = db.Update(func(tx *bbolt.Tx) error {
 
@@ -56,26 +56,26 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 		for i := range r.Labels {
 			if i != 0 && bytes.Equal(r.Labels[i], r.Labels[i-1]) {
 				// fast path: ingesting same series with multiple samples.
-				out.B[i] = out.B[i-1]
+				r.ID[i] = r.ID[i-1]
 				continue
 			}
 			sum := binary.BigEndian.AppendUint64(sumB[:0], xxhash.Sum64(r.Labels[i]))
 			if got := metricsSumB.Get(sum); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
-				out.B[i] = slices.Clone(magic.ReinterpretSlice[tsid.Column](got))
+				r.ID[i] = append(r.ID[i][:0], magic.ReinterpretSlice[tsid.Column](got)...)
 				continue
 			}
 
 			// generate tsid
-			out.B[i] = make(tsid.ID, 0, 4)
+			r.ID[i] = r.ID[i][:0]
 
 			var err error
 			tid, err := metricsSumB.NextSequence()
 			if err != nil {
 				return fmt.Errorf("generating metrics sequence %w", err)
 			}
-			out.B[i] = append(out.B[i], tsid.Column{
+			r.ID[i] = append(r.ID[i], tsid.Column{
 				ID:    MetricsLabels,
 				Value: tid,
 			})
@@ -90,7 +90,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
-					out.B[i] = append(out.B[i], tsid.Column{
+					r.ID[i] = append(r.ID[i], tsid.Column{
 						ID:    view,
 						Value: binary.BigEndian.Uint64(got),
 					})
@@ -104,7 +104,7 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					out.B[i] = append(out.B[i], tsid.Column{
+					r.ID[i] = append(r.ID[i], tsid.Column{
 						ID:    view,
 						Value: nxt,
 					})
@@ -112,13 +112,13 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 			}
 
 			// 2. store checksum => tsid in checksums bucket
-			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](out.B[i]))
+			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](r.ID[i]))
 			if err != nil {
 				return fmt.Errorf("storing metrics checksum %w", err)
 			}
 
 			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, out.B[i][0].Value), r.Labels[i])
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, r.ID[i][0].Value), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
 			}

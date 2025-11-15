@@ -11,7 +11,6 @@ import (
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/seq"
-	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
@@ -159,9 +158,7 @@ func (db *Store) MinMax() (lo, hi int64, err error) {
 // AddRows index and store rows.
 func (db *Store) AddRows(rows *Rows) error {
 
-	var ids tsid.B
-
-	hi, err := translate(db.txt, &ids, rows)
+	hi, err := translate(db.txt, rows)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
@@ -181,7 +178,7 @@ func (db *Store) AddRows(rows *Rows) error {
 			ma.Timestamp(id, rows.Timestamp[idx])
 			ma.Value(id, rows.Value[idx])
 			ma.Kind(id, rows.Kind[idx])
-			ma.Index(id, ids.B[idx])
+			ma.Index(id, rows.ID[idx])
 		}
 	}
 

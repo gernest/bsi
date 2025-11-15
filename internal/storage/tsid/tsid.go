@@ -1,9 +1,5 @@
 package tsid
 
-type B struct {
-	B []ID
-}
-
 type ID = []Column
 
 type Column struct {

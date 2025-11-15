@@ -9,7 +9,6 @@ import (
 
 	"github.com/cockroachdb/datadriven"
 	"github.com/gernest/bsi/internal/storage/buffer"
-	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -40,17 +39,16 @@ func TestText(t *testing.T) {
 					continue
 				}
 				if strings.HasPrefix(line, "get_tsid") {
-					ids := new(tsid.B)
 
-					hi, err := translate(db.txt, ids, r)
+					hi, err := translate(db.txt, r)
 
 					if err != nil {
 						td.Fatalf(t, "failed assigning tsid %v", err)
 						return ""
 					}
 					fmt.Fprintln(&o, hi)
-					for i := range ids.B {
-						fmt.Fprintln(&o, &ids.B[i])
+					for i := range r.ID {
+						fmt.Fprintln(&o, &r.ID[i])
 					}
 					r.Labels = r.Labels[:0]
 				}
