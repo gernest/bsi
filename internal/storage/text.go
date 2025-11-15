@@ -29,9 +29,8 @@ var (
 
 func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 
-	// we make sure out.B has the same size as labels.
 	size := len(r.Labels)
-	out.B = slices.Grow(out.B[:0], size)[:size]
+	out.B = make([]tsid.ID, size)
 
 	err = db.Update(func(tx *bbolt.Tx) error {
 
@@ -64,12 +63,12 @@ func translate(db *bbolt.DB, out *tsid.B, r *Rows) (hi uint64, err error) {
 			if got := metricsSumB.Get(sum); got != nil {
 				// fast path: we have already processed labels in this view. We don't need
 				// to do any more work.
-				out.B[i] = append(out.B[i][:0], magic.ReinterpretSlice[tsid.Column](got)...)
+				out.B[i] = slices.Clone(magic.ReinterpretSlice[tsid.Column](got))
 				continue
 			}
 
 			// generate tsid
-			out.B[i] = out.B[i][:0]
+			out.B[i] = make(tsid.ID, 0, 4)
 
 			var err error
 			tid, err := metricsSumB.NextSequence()
