@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var rowsPool = sync.Pool{New: func() any { return new(db.Rows) }}
+var appenderPool = sync.Pool{New: func() any { return new(appender) }}
 
 // API implements prometheus storage api on top of our own timeseries database.
 type API struct {
@@ -69,14 +69,13 @@ func (a *API) Close() error {
 
 // Appender implements storage.Appendable
 func (a *API) Appender(_ context.Context) storage.Appender {
-	return &appender{
-		db:  &a.db,
-		set: rowsPool.Get().(*db.Rows),
-	}
+	app := appenderPool.Get().(*appender)
+	app.db = &a.db
+	return app
 }
 
 type appender struct {
-	set *db.Rows
+	set db.Rows
 	db  *db.Store
 }
 
@@ -86,17 +85,19 @@ func (w *appender) SetOptions(_ *storage.AppendOptions) {
 }
 
 func (w *appender) Rollback() error {
-	if w.set != nil {
-		rowsPool.Put(w.set.Reset())
-		w.set = nil
-	}
+	w.release()
 	return nil
 }
 
+func (w *appender) release() {
+	w.db = nil
+	w.set.Reset()
+	appenderPool.Put(w)
+}
+
 func (w *appender) Commit() error {
-	err := w.db.AddRows(w.set)
-	rowsPool.Put(w.set)
-	w.set = nil
+	err := w.db.AddRows(&w.set)
+	w.release()
 	return err
 }
 
@@ -252,7 +253,7 @@ func (a *API) ExemplarQuerier(_ context.Context) (storage.ExemplarQuerier, error
 }
 
 // AppendExemplar implements storage.ExemplarStorage.
-func (a *API) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *API) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	l = l.WithoutEmpty()
 	if l.IsEmpty() {
 		return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
@@ -260,22 +261,14 @@ func (a *API) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Ex
 	if lbl, dup := l.HasDuplicateLabelNames(); dup {
 		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
 	}
-	exe := prompb.Exemplar{
-		Labels:    prompb.FromLabels(e.Labels, nil),
-		Value:     e.Value,
-		Timestamp: e.Ts,
-	}
-	data, err := exe.Marshal()
+
+	app := a.Appender(context.TODO())
+	_, err := app.AppendExemplar(ref, l, e)
 	if err != nil {
+		app.Rollback()
 		return 0, err
 	}
-	set := rowsPool.Get().(*db.Rows)
-	set.AppendExemplar(l, e.Ts, data)
-	err = a.db.AddRows(set)
-
-	rowsPool.Put(set.Reset())
-
-	return 0, err
+	return 0, app.Commit()
 }
 
 func (s *exemplarQuery) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
