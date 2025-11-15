@@ -56,7 +56,7 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 		for i := range r.Labels {
 			if i != 0 && bytes.Equal(r.Labels[i], r.Labels[i-1]) {
 				// fast path: ingesting same series with multiple samples.
-				r.ID[i] = r.ID[i-1]
+				r.ID[i] = append(r.ID[i][:0], r.ID[i-1]...)
 				continue
 			}
 			sum := binary.BigEndian.AppendUint64(sumB[:0], xxhash.Sum64(r.Labels[i]))
