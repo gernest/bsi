@@ -5,7 +5,6 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
-	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/row"
 	"github.com/gernest/bsi/internal/storage/samples"
@@ -13,19 +12,6 @@ import (
 	"github.com/gernest/roaring"
 	"github.com/gernest/roaring/shardwidth"
 )
-
-type viewsItems struct{}
-
-func (viewsItems) Init() *view { return new(view) }
-
-func (viewsItems) Reset(v *view) *view { return v.Reset() }
-
-var _ pools.Items[*view] = (*viewsItems)(nil)
-
-type partitionShard struct {
-	Partition uint16
-	Shard     uint16
-}
 
 // view is like a posting list with all shards that might contain data. This also
 // contains translation of label matchers which is shard agnostic.

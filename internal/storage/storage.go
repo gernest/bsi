@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/gernest/bsi/internal/bitmaps"
-	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/bsi/internal/storage/tsid"
@@ -18,20 +18,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var tsidPool = pools.Pool[*tsid.B]{Init: tsidItems{}}
-
-type tsidItems struct{}
-
-var _ pools.Items[*tsid.B] = (*tsidItems)(nil)
-
-func (tsidItems) Init() *tsid.B {
-	return &tsid.B{B: make([]tsid.ID, 0, 1<<10)}
-}
-
-func (tsidItems) Reset(v *tsid.B) *tsid.B {
-	v.B = v.B[:0]
-	return v
-}
+var tsidPool = sync.Pool{New: func() any { return &tsid.B{B: make([]tsid.ID, 0, 1<<10)} }}
 
 // Store implements timeseries database.
 type Store struct {
@@ -175,8 +162,11 @@ func (db *Store) MinMax() (lo, hi int64, err error) {
 // AddRows index and store rows.
 func (db *Store) AddRows(rows *Rows) error {
 
-	ids := tsidPool.Get()
-	defer tsidPool.Put(ids)
+	ids := tsidPool.Get().(*tsid.B)
+	defer func() {
+		ids.B = ids.B[:0]
+		tsidPool.Put(ids)
+	}()
 
 	hi, err := translate(db.txt, ids, rows)
 	if err != nil {

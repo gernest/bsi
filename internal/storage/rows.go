@@ -4,17 +4,9 @@ import (
 	"bytes"
 	"math"
 
-	"github.com/gernest/bsi/internal/pools"
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/prometheus/prometheus/model/labels"
 )
-
-type RowsItem struct{}
-
-func (RowsItem) Init() *Rows         { return new(Rows) }
-func (RowsItem) Reset(v *Rows) *Rows { return v.Reset() }
-
-var _ pools.Items[*Rows] = (*RowsItem)(nil)
 
 // Rows is an in memory batch of metrics belonging to a single view.
 type Rows struct {

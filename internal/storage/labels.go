@@ -69,10 +69,9 @@ func (db *Store) LabelNames(start, end int64, limit int, matchers ...*labels.Mat
 }
 
 func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(name, value []byte) error) error {
-	shards := shardsPool.Get()
-	defer shardsPool.Put(shards)
+	var shards view
 
-	err := db.findShards(shards, matchers)
+	err := db.findShards(&shards, matchers)
 	if err != nil {
 		return err
 	}
@@ -80,7 +79,7 @@ func (db *Store) series(start, end int64, matchers []*labels.Matcher, cb func(na
 	var result samples.Samples
 	result.Init()
 
-	err = db.readSeries(&result, shards, start, end)
+	err = db.readSeries(&result, &shards, start, end)
 	if err != nil {
 		return nil
 	}

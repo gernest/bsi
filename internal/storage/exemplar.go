@@ -10,9 +10,8 @@ import (
 
 // SelectExemplar implements storage.ExemplarQuerier.
 func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	shards := shardsPool.Get()
-	defer shardsPool.Put(shards)
-	err := db.findShardsAmy(shards, matchers)
+	var shards view
+	err := db.findShardsAmy(&shards, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +19,7 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 	var result samples.Samples
 	result.Init()
 
-	err = db.readExemplar(&result, shards, start, end)
+	err = db.readExemplar(&result, &shards, start, end)
 	if err != nil {
 		return nil, err
 	}

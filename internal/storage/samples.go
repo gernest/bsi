@@ -16,10 +16,8 @@ import (
 //
 // Search is not concurrent. Returned series is always sorted.
 func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	shards := shardsPool.Get()
-	defer shardsPool.Put(shards)
-
-	err := db.findShards(shards, matchers)
+	var shards view
+	err := db.findShards(&shards, matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -27,7 +25,7 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 	var result samples.Samples
 	result.Init()
 
-	err = db.readTs(&result, shards, hints.Start, hints.End)
+	err = db.readTs(&result, &shards, hints.Start, hints.End)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}

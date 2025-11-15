@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/datadriven"
 	"github.com/gernest/bsi/internal/storage/buffer"
+	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -39,8 +40,7 @@ func TestText(t *testing.T) {
 					continue
 				}
 				if strings.HasPrefix(line, "get_tsid") {
-					ids := tsidPool.Get()
-					defer tsidPool.Put(ids)
+					ids := new(tsid.B)
 
 					hi, err := translate(db.txt, ids, r)
 

@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"sync"
 	"time"
 
-	"github.com/gernest/bsi/internal/pools"
 	db "github.com/gernest/bsi/internal/storage"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var rowsPool = pools.Pool[*db.Rows]{Init: db.RowsItem{}}
+var rowsPool = sync.Pool{New: func() any { return new(db.Rows) }}
 
 // API implements prometheus storage api on top of our own timeseries database.
 type API struct {
@@ -71,7 +71,7 @@ func (a *API) Close() error {
 func (a *API) Appender(_ context.Context) storage.Appender {
 	return &appender{
 		db:  &a.db,
-		set: rowsPool.Get(),
+		set: rowsPool.Get().(*db.Rows),
 	}
 }
 
@@ -87,7 +87,7 @@ func (w *appender) SetOptions(_ *storage.AppendOptions) {
 
 func (w *appender) Rollback() error {
 	if w.set != nil {
-		rowsPool.Put(w.set)
+		rowsPool.Put(w.set.Reset())
 		w.set = nil
 	}
 	return nil
@@ -269,11 +269,13 @@ func (a *API) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Ex
 	if err != nil {
 		return 0, err
 	}
-	set := rowsPool.Get()
+	set := rowsPool.Get().(*db.Rows)
 	set.AppendExemplar(l, e.Ts, data)
-	defer rowsPool.Put(set)
+	err = a.db.AddRows(set)
 
-	return 0, a.db.AddRows(set)
+	rowsPool.Put(set.Reset())
+
+	return 0, err
 }
 
 func (s *exemplarQuery) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
