@@ -41,3 +41,7 @@ func Mutex(ra *roaring.Bitmap, id uint64, value ...uint64) {
 		)
 	}
 }
+
+func Exist(ra *roaring.Bitmap, id uint64) {
+	ra.DirectAdd(id % shardwidth.ShardWidth)
+}

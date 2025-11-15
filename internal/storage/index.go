@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"sort"
+
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/pools"
@@ -38,12 +40,41 @@ type view struct {
 	matchAny [][]match
 }
 
+func (v *view) Clamp() {
+	v.match = clamp(v.match)
+	for i := range v.matchAny {
+		v.matchAny[i] = clamp(v.matchAny[i])
+	}
+}
+
+func clamp(all []match) []match {
+	if len(all) < 2 {
+		return all
+	}
+	sort.SliceStable(all, func(i, _ int) bool {
+		return all[i].exists
+	})
+	for i := range all {
+		if !all[i].exists {
+			if i != 0 {
+				all = all[i-1:]
+			}
+			break
+		}
+	}
+	return all
+}
+
 type match struct {
 	rows   *roaring.Bitmap
 	column string
+	exists bool
 }
 
 func (m *match) Column() uint64 {
+	if m.exists {
+		return MetricsLabelsExistence
+	}
 	return xxhash.Sum64String(m.column)
 }
 
@@ -58,6 +89,7 @@ type data map[rbf.Key]*roaring.Bitmap
 func (s data) Index(id uint64, value tsid.ID) {
 	s.bsi(value[0].ID, id, int64(value[0].Value))
 	metricID := value[0].Value
+	s.exists(MetricsLabelsExistence, metricID)
 	for i := 1; i < len(value); i++ {
 		s.mutex(value[i].ID, metricID, value[i].Value)
 	}
@@ -83,6 +115,11 @@ func (s data) bsi(col uint64, id uint64, val int64) {
 func (s data) mutex(col uint64, id uint64, val uint64) {
 	shard := id / shardwidth.ShardWidth
 	bitmaps.Mutex(s.get(shard, col), id, val)
+}
+
+func (s data) exists(col uint64, id uint64) {
+	shard := id / shardwidth.ShardWidth
+	bitmaps.Exist(s.get(shard, col), id)
 }
 
 func (s data) get(shard, col uint64) *roaring.Bitmap {
@@ -192,7 +229,7 @@ func selectSeriesIDAll(tx *rbf.Tx, records *rbf.Records, matchers []match) (*roa
 	if len(matchers) == 0 {
 		return roaring.NewBitmap(), nil
 	}
-	ra, err := selectRow(tx, records, matchers[0].Column(), matchers[0].rows)
+	ra, err := selectRow(tx, records, &matchers[0])
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +238,7 @@ func selectSeriesIDAll(tx *rbf.Tx, records *rbf.Records, matchers []match) (*roa
 	}
 
 	for i := 1; i < len(matchers); i++ {
-		rx, err := selectRow(tx, records, matchers[i].Column(), matchers[i].rows)
+		rx, err := selectRow(tx, records, &matchers[i])
 		if err != nil {
 			return nil, err
 		}
@@ -216,6 +253,9 @@ func selectSeriesIDAll(tx *rbf.Tx, records *rbf.Records, matchers []match) (*roa
 	return ra, nil
 }
 
-func selectRow(tx *rbf.Tx, records *rbf.Records, col uint64, rows *roaring.Bitmap) (*roaring.Bitmap, error) {
-	return row.Mutex(tx, records, row.Unlimited(), col, rows)
+func selectRow(tx *rbf.Tx, records *rbf.Records, m *match) (*roaring.Bitmap, error) {
+	if m.exists {
+		return row.Exists(tx, records, row.Unlimited(), m.Column())
+	}
+	return row.Mutex(tx, records, row.Unlimited(), m.Column(), m.rows)
 }

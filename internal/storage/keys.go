@@ -6,6 +6,7 @@ const (
 	MetricsValue
 	MetricsType
 	MetricsLabels
+	MetricsLabelsExistence
 )
 
 type Kind byte

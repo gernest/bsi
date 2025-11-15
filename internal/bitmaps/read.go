@@ -11,3 +11,7 @@ func Row(ra OffsetRanger, shard, rowID uint64) (*roaring.Bitmap, error) {
 		shardwidth.ShardWidth*rowID,
 		shardwidth.ShardWidth*(rowID+1))
 }
+
+func Existence(tx OffsetRanger, shard uint64) (*roaring.Bitmap, error) {
+	return Row(tx, shard, bsiExistsBit)
+}

@@ -20,6 +20,7 @@ var shardsPool = pools.Pool[*view]{Init: viewsItems{}}
 func (db *Store) findShards(vs *view, matchers []*labels.Matcher) (err error) {
 	return db.txt.View(func(tx *bbolt.Tx) error {
 		vs.match = slices.Collect(find(tx, matchers))
+		vs.Clamp()
 		return nil
 	})
 }
@@ -29,6 +30,7 @@ func (db *Store) findShardsAmy(vs *view, matchers [][]*labels.Matcher) (err erro
 		for i := range matchers {
 			vs.matchAny = append(vs.matchAny, slices.Collect(find(tx, matchers[i])))
 		}
+		vs.Clamp()
 		return nil
 	})
 }
@@ -45,17 +47,21 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			case labels.MatchEqual:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				ra := roaring.NewBitmap()
+				ma := match{
+					column: m.Name,
+					rows:   ra,
+				}
 				if bytes.Equal(b, magic.Slice(m.Name)) {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
 					if value != nil {
 						ra.DirectAdd(binary.BigEndian.Uint64(value))
 					}
+				} else if m.Value == "" {
+					// the label name is missing and we have label_name="" matcher.
+					ma = match{exists: true}
 				}
-				ma := match{
-					column: m.Name,
-					rows:   ra,
-				}
+
 				if !yield(ma) {
 					return
 				}
@@ -84,14 +90,24 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			case labels.MatchNotEqual, labels.MatchNotRegexp:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				ra := roaring.NewBitmap()
-				if bytes.Equal(b, magic.Slice(m.Name)) {
-					mb := searchB.Bucket(b)
-					mc := mb.Cursor()
-					for a, b := mc.First(); b != nil; a, b = mc.Next() {
-						if m.Matches(magic.String(a)) {
-							va := binary.BigEndian.Uint64(b)
-							ra.DirectAdd(va)
-						}
+				if !bytes.Equal(b, magic.Slice(m.Name)) || m.Value == "" {
+					// label name does not exists. Select all valid samples
+					ma := match{
+						exists: true,
+						rows:   ra,
+					}
+					if !yield(ma) {
+						return
+					}
+					continue
+				}
+
+				mb := searchB.Bucket(b)
+				mc := mb.Cursor()
+				for a, b := mc.First(); b != nil; a, b = mc.Next() {
+					if m.Matches(magic.String(a)) {
+						va := binary.BigEndian.Uint64(b)
+						ra.DirectAdd(va)
 					}
 				}
 				ma := match{

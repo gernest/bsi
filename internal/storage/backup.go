@@ -55,7 +55,7 @@ func (db *Store) snapshot(base string) error {
 	err = db.db.Backup(f)
 	f.Close()
 	if err != nil {
-		return fmt.Errorf("writing rbf database $w", err)
+		return fmt.Errorf("writing rbf database %w", err)
 	}
 	return nil
 }

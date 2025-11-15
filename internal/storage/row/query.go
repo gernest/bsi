@@ -138,3 +138,33 @@ func mutex(tx *rbf.Tx, root uint32, shard uint64, all *roaring.Bitmap, cb func(r
 	}
 	return nil
 }
+
+func Exists(tx *rbf.Tx, records *rbf.Records, limit Limit, col uint64) (*roaring.Bitmap, error) {
+	it := records.Iterator()
+	result := roaring.NewBitmap()
+	for it.Seek(rbf.Key{Column: col, Shard: limit.StartShard}); !it.Done(); {
+		name, page, ok := it.Next()
+		if !ok || name.Column != col || name.Shard >= limit.EndShard {
+			break
+		}
+		err := exists(tx, page, name.Shard, func(ra *roaring.Bitmap) {
+			result = result.Union(ra)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func exists(tx *rbf.Tx, root uint32, shard uint64, cb func(ra *roaring.Bitmap)) error {
+	cu := tx.CursorFromRoot(root)
+	defer cu.Close()
+
+	ra, err := bitmaps.Existence(cu, shard)
+	if err != nil {
+		return err
+	}
+	cb(ra)
+	return nil
+}
