@@ -76,6 +76,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
@@ -217,6 +218,8 @@ type flagConfig struct {
 	promqlEnableDelayedNameRemoval bool
 
 	promslogConfig promslog.Config
+
+	tsdbEngine string
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -433,6 +436,9 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.serverStoragePath)
+
+	serverOnlyFlag(a, "storage.tsdb.engine", "Storage engine for tsdb").
+		Default("rbf").StringVar(&cfg.tsdbEngine)
 
 	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
@@ -1303,12 +1309,21 @@ func main() {
 						return errors.New("flag 'storage.tsdb.max-block-chunk-segment-size' must be set over 1MB")
 					}
 				}
-
-				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
-				if err != nil {
-					return fmt.Errorf("opening storage failed: %w", err)
+				var db storage.Storage
+				switch cfg.tsdbEngine {
+				case "rbf":
+					da := new(api.API)
+					err := da.Init(localStoragePath, logger)
+					if err != nil {
+						return fmt.Errorf("opening storage failed: %w", err)
+					}
+					db = da
+				default:
+					db, err = openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
+					if err != nil {
+						return fmt.Errorf("opening storage failed: %w", err)
+					}
 				}
-
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn("This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.", "fs_type", fsType)
@@ -1329,7 +1344,10 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
-				// db.SetWriteNotified(remoteStorage)
+				if re, ok := db.(interface{ SetWriteNotified(wlog.WriteNotified) }); ok {
+					re.SetWriteNotified(remoteStorage)
+
+				}
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1442,16 +1460,16 @@ func main() {
 	logger.Info("See you next time!")
 }
 
-func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*api.API, error) {
-	db := new(api.API)
-	err := db.Init(dir, logger.With("component", "tsdb"))
+func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
+	db, err := tsdb.Open(
+		dir,
+		logger.With("component", "tsdb"),
+		reg,
+		opts,
+		stats,
+	)
 	if err != nil {
 		return nil, err
-	}
-	if opts != nil {
-		if opts.RetentionDuration > 0 {
-			db.SetRetention(opts.RetentionDuration)
-		}
 	}
 
 	reg.MustRegister(
@@ -1459,16 +1477,19 @@ func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registere
 			Name: "prometheus_tsdb_lowest_timestamp_seconds",
 			Help: "Lowest timestamp value stored in the database.",
 		}, func() float64 {
-			ts, _ := db.StartTime()
-			return float64(ts / 1000)
-		}),
+			bb := db.Blocks()
+			if len(bb) == 0 {
+				return float64(db.Head().MinTime() / 1000)
+			}
+			return float64(db.Blocks()[0].Meta().MinTime / 1000)
+		}), prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_min_time_seconds",
+			Help: "Minimum time bound of the head block.",
+		}, func() float64 { return float64(db.Head().MinTime() / 1000) }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_max_time_seconds",
-			Help: "Highest timestamp value stored in the database.",
-		}, func() float64 {
-			ts, _ := db.MaxTs()
-			return float64(ts / 1000)
-		}),
+			Help: "Maximum timestamp of the head block.",
+		}, func() float64 { return float64(db.Head().MaxTime() / 1000) }),
 	)
 
 	return db, nil
@@ -1657,6 +1678,8 @@ func (s *readyStorage) StartTime() (int64, error) {
 			return startTime + s.startTimeMargin, nil
 		case *agent.DB:
 			return db.StartTime()
+		case *api.API:
+			return db.StartTime()
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1688,6 +1711,8 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 			return db.ExemplarQuerier(ctx)
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
+		case *api.API:
+			return db.ExemplarQuerier(ctx)
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1748,10 +1773,12 @@ func (s *readyStorage) Close() error {
 func (s *readyStorage) CleanTombstones() error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *api.API:
-			return nil
+		case *tsdb.DB:
+			return db.CleanTombstones()
 		case *agent.DB:
 			return agent.ErrUnsupported
+		case *api.API:
+			return errors.New("unsupported poeration for rbf storage")
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1763,10 +1790,12 @@ func (s *readyStorage) CleanTombstones() error {
 func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *api.API:
-			return []tsdb.BlockMeta{}, nil
+		case *tsdb.DB:
+			return db.BlockMetas(), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
+		case *api.API:
+			return nil, errors.New("unsupported poeration for rbf storage")
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1782,6 +1811,8 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 			return db.Delete(ctx, mint, maxt, ms...)
 		case *agent.DB:
 			return agent.ErrUnsupported
+		case *api.API:
+			return db.Delete(ctx, mint, maxt, ms...)
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1793,10 +1824,12 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *api.API:
+		case *tsdb.DB:
 			return db.Snapshot(dir, withHead)
 		case *agent.DB:
 			return agent.ErrUnsupported
+		case *api.API:
+			return db.Snapshot(dir, withHead)
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1808,10 +1841,12 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *api.API:
-			return db.Stats(statsByLabelName, limit)
+		case *tsdb.DB:
+			return db.Head().Stats(statsByLabelName, limit), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
+		case *api.API:
+			return db.Stats(statsByLabelName, limit)
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
