@@ -92,7 +92,7 @@ func (r *Rows) AppendMetadata(la labels.Labels, ts int64, value []byte) {
 }
 
 // Reset resets r fields and retain capacity.
-func (r *Rows) Reset() *Rows {
+func (r *Rows) Reset() {
 	r.Labels = reset(r.Labels)
 	r.Timestamp = reset(r.Timestamp)
 	r.Value = reset(r.Value)
@@ -101,7 +101,6 @@ func (r *Rows) Reset() *Rows {
 	r.Exemplar = reset(r.Exemplar)
 	r.Kind = reset(r.Kind)
 	r.flags = 0
-	return r
 }
 
 func reset[T any](a []T) []T {
