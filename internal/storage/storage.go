@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"github.com/gernest/bsi/internal/bitmaps"
@@ -17,8 +16,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
 )
-
-var tsidPool = sync.Pool{New: func() any { return &tsid.B{B: make([]tsid.ID, 0, 1<<10)} }}
 
 // Store implements timeseries database.
 type Store struct {
@@ -162,13 +159,9 @@ func (db *Store) MinMax() (lo, hi int64, err error) {
 // AddRows index and store rows.
 func (db *Store) AddRows(rows *Rows) error {
 
-	ids := tsidPool.Get().(*tsid.B)
-	defer func() {
-		ids.B = ids.B[:0]
-		tsidPool.Put(ids)
-	}()
+	var ids tsid.B
 
-	hi, err := translate(db.txt, ids, rows)
+	hi, err := translate(db.txt, &ids, rows)
 	if err != nil {
 		return fmt.Errorf("assigning tsid to rows %w", err)
 	}
