@@ -10,7 +10,6 @@ import (
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
-	"github.com/gernest/bsi/internal/storage/seq"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
@@ -165,21 +164,17 @@ func (db *Store) AddRows(rows *Rows) error {
 
 	ma := make(data)
 
-	lo := hi - uint64(rows.Size())
+	id := hi - uint64(rows.Size())
 
-	for start, se := range seq.RangeShardSequence(seq.Sequence{Lo: lo, Hi: hi}) {
-		offset := start + int(se.Hi-se.Lo)
-		for i := range offset - start {
-			if rows.Kind[i] == None {
-				continue
-			}
-			idx := start + i
-			id := se.Lo + uint64(idx)
-			ma.Timestamp(id, rows.Timestamp[idx])
-			ma.Value(id, rows.Value[idx])
-			ma.Kind(id, rows.Kind[idx])
-			ma.Index(id, rows.ID[idx])
+	for i := range rows.Labels {
+		if rows.Kind[i] == None {
+			continue
 		}
+		ma.Timestamp(id, rows.Timestamp[i])
+		ma.Value(id, rows.Value[i])
+		ma.Kind(id, rows.Kind[i])
+		ma.Index(id, rows.ID[i])
+		id++
 	}
 
 	err = db.apply(ma)
