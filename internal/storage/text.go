@@ -60,25 +60,37 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 				continue
 			}
 			sum := binary.BigEndian.AppendUint64(sumB[:0], xxhash.Sum64(r.Labels[i]))
-			if got := metricsSumB.Get(sum); got != nil {
-				// fast path: we have already processed labels in this view. We don't need
-				// to do any more work.
-				r.ID[i] = append(r.ID[i][:0], magic.ReinterpretSlice[tsid.Column](got)...)
-				continue
-			}
 
-			// generate tsid
 			r.ID[i] = r.ID[i][:0]
 
-			var err error
-			tid, err := metricsSumB.NextSequence()
-			if err != nil {
-				return fmt.Errorf("generating metrics sequence %w", err)
+			if got := metricsSumB.Get(sum); got != nil {
+				r.ID[i] = append(r.ID[i], tsid.Column{
+					ID:    MetricsLabels,
+					Value: binary.BigEndian.Uint64(got),
+				})
+			} else {
+				var err error
+				tid, err := metricsSumB.NextSequence()
+				if err != nil {
+					return fmt.Errorf("generating metrics sequence %w", err)
+				}
+				r.ID[i] = append(r.ID[i], tsid.Column{
+					ID:    MetricsLabels,
+					Value: tid,
+				})
+				metricsID := binary.BigEndian.AppendUint64(nil, tid)
+				// 2. store checksum => tsid in checksums bucket
+				err = metricsSumB.Put(sum[:], metricsID)
+				if err != nil {
+					return fmt.Errorf("storing metrics checksum %w", err)
+				}
+
+				// 3. store metrics_id => labels.Labels
+				err = metricsDataB.Put(metricsID, r.Labels[i])
+				if err != nil {
+					return fmt.Errorf("storing metrics data %w", err)
+				}
 			}
-			r.ID[i] = append(r.ID[i], tsid.Column{
-				ID:    MetricsLabels,
-				Value: tid,
-			})
 
 			// Building index
 			for name, value := range buffer.RangeLabels(r.Labels[i]) {
@@ -111,17 +123,6 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 				}
 			}
 
-			// 2. store checksum => tsid in checksums bucket
-			err = metricsSumB.Put(sum[:], magic.ReinterpretSlice[byte](r.ID[i]))
-			if err != nil {
-				return fmt.Errorf("storing metrics checksum %w", err)
-			}
-
-			// 3. store labels_sequence_id => labels_data in data bucket
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, r.ID[i][0].Value), r.Labels[i])
-			if err != nil {
-				return fmt.Errorf("storing metrics data %w", err)
-			}
 		}
 
 		if r.Has(Histogram) || r.Has(FloatHistogram) {
