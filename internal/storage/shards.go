@@ -38,14 +38,20 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 			return
 		}
 		searchB := tx.Bucket(search)
+		columnsB := tx.Bucket(columns)
 		cu := searchB.Cursor()
 		for _, m := range matchers {
+			var columnID uint64
+			if got := columnsB.Get(magic.Slice(m.Name)); got != nil {
+				columnID, _ = binary.Uvarint(got)
+			}
 			switch m.Type {
 			case labels.MatchEqual:
 				b, _ := cu.Seek(magic.Slice(m.Name))
 				ra := roaring.NewBitmap()
 				ma := match{
 					column: m.Name,
+					id:     columnID,
 					rows:   ra,
 				}
 				if bytes.Equal(b, magic.Slice(m.Name)) {
@@ -78,6 +84,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				}
 				ma := match{
 					column: m.Name,
+					id:     columnID,
 					rows:   ra,
 				}
 				if !yield(ma) {
@@ -109,6 +116,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				}
 				ma := match{
 					column: m.Name,
+					id:     columnID,
 					rows:   ra,
 				}
 				if !yield(ma) {

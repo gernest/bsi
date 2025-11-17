@@ -3,7 +3,6 @@ package storage
 import (
 	"sort"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
 	"github.com/gernest/bsi/internal/storage/row"
@@ -54,6 +53,7 @@ func clamp(all []match) []match {
 type match struct {
 	rows   *roaring.Bitmap
 	column string
+	id     uint64
 	exists bool
 }
 
@@ -61,7 +61,7 @@ func (m *match) Column() uint64 {
 	if m.exists {
 		return MetricsLabelsExistence
 	}
-	return xxhash.Sum64String(m.column)
+	return m.id
 }
 
 func (v *view) Reset() *view {

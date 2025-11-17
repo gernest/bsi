@@ -18,6 +18,7 @@ import (
 
 var (
 	admin         = []byte("admin")
+	columns       = []byte("columns")
 	snapshots     = []byte("snapshots")
 	metricsSum    = []byte("sum")
 	metricsData   = []byte("data")
@@ -51,6 +52,7 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 		metricsSumB := tx.Bucket(metricsSum)
 		metricsDataB := tx.Bucket(metricsData)
 		searchIndexB := tx.Bucket(search)
+		columnsB := tx.Bucket(columns)
 
 		var sumB [8]byte
 		for i := range r.Labels {
@@ -98,8 +100,10 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 				if err != nil {
 					return fmt.Errorf("creating label bucket %w", err)
 				}
-				view := xxhash.Sum64(name)
-
+				view, err := txt2ID(columnsB, name)
+				if err != nil {
+					return fmt.Errorf("assigning column id %w", err)
+				}
 				if got := labelNameB.Get(value); got != nil {
 					// fast path: we already assigned unique id for label value
 					r.ID[i] = append(r.ID[i], tsid.Column{
@@ -177,6 +181,23 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 	return
 }
 
+func txt2ID(b *bbolt.Bucket, data []byte) (uint64, error) {
+	if got := b.Get(data); got != nil {
+		val, _ := binary.Uvarint(got)
+		return val, nil
+	}
+	nxt, err := b.NextSequence()
+	if err != nil {
+		return 0, fmt.Errorf("assigning sequence %w", err)
+	}
+	val := binary.AppendUvarint(nil, nxt)
+	err = b.Put(data, val)
+	if err != nil {
+		return 0, fmt.Errorf("storing sequence %w", err)
+	}
+	return nxt, nil
+}
+
 func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 	for i := range data {
 		if len(data[i]) == 0 {
@@ -184,12 +205,12 @@ func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 		}
 		nxt, err := b.NextSequence()
 		if err != nil {
-			return fmt.Errorf("assigning histogram sequence %w", err)
+			return fmt.Errorf("assigning sequence %w", err)
 		}
 		values[i] = nxt
 		err = b.Put(binary.BigEndian.AppendUint64(nil, nxt), data[i])
 		if err != nil {
-			return fmt.Errorf("storing histogram sequence %w", err)
+			return fmt.Errorf("storing sequence %w", err)
 		}
 	}
 	return nil

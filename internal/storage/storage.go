@@ -46,6 +46,17 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("creating sum bucket %w", err)
 		}
+		columnsB, err := tx.CreateBucket(columns)
+		if err != nil {
+			return fmt.Errorf("creating columns bucket %w", err)
+		}
+		if columnsB.Sequence() == 0 {
+			// reserve 1...128 for internal use
+			err = columnsB.SetSequence(128)
+			if err != nil {
+				return fmt.Errorf("reserving internal columns %w", err)
+			}
+		}
 		_, err = tx.CreateBucket(snapshots)
 		if err != nil {
 			return fmt.Errorf("creating snapshots bucket %w", err)
