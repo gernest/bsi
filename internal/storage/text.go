@@ -10,7 +10,6 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/magic"
-	"github.com/gernest/bsi/internal/storage/tsid"
 	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.etcd.io/bbolt"
@@ -66,32 +65,26 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 			r.ID[i] = r.ID[i][:0]
 
 			if got := metricsSumB.Get(sum); got != nil {
-				r.ID[i] = append(r.ID[i], tsid.Column{
-					ID:    MetricsLabels,
-					Value: binary.BigEndian.Uint64(got),
-				})
-			} else {
-				var err error
-				tid, err := metricsSumB.NextSequence()
-				if err != nil {
-					return fmt.Errorf("generating metrics sequence %w", err)
-				}
-				r.ID[i] = append(r.ID[i], tsid.Column{
-					ID:    MetricsLabels,
-					Value: tid,
-				})
-				metricsID := binary.BigEndian.AppendUint64(nil, tid)
-				// 2. store checksum => tsid in checksums bucket
-				err = metricsSumB.Put(sum[:], metricsID)
-				if err != nil {
-					return fmt.Errorf("storing metrics checksum %w", err)
-				}
+				r.ID[i] = append(r.ID[i], got...)
+				continue
+			}
+			var err error
+			tid, err := metricsSumB.NextSequence()
+			if err != nil {
+				return fmt.Errorf("generating metrics sequence %w", err)
+			}
 
-				// 3. store metrics_id => labels.Labels
-				err = metricsDataB.Put(metricsID, r.Labels[i])
-				if err != nil {
-					return fmt.Errorf("storing metrics data %w", err)
-				}
+			r.ID[i].Append(MetricsLabels, tid)
+			// 2. store checksum => tsid in checksums bucket
+			err = metricsSumB.Put(sum[:], r.ID[i])
+			if err != nil {
+				return fmt.Errorf("storing metrics checksum %w", err)
+			}
+
+			// 3. store metrics_id => labels.Labels
+			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, tid), r.Labels[i])
+			if err != nil {
+				return fmt.Errorf("storing metrics data %w", err)
 			}
 
 			// Building index
@@ -105,11 +98,7 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 					return fmt.Errorf("assigning column id %w", err)
 				}
 				if got := labelNameB.Get(value); got != nil {
-					// fast path: we already assigned unique id for label value
-					r.ID[i] = append(r.ID[i], tsid.Column{
-						ID:    view,
-						Value: binary.BigEndian.Uint64(got),
-					})
+					r.ID[i].Append(view, binary.BigEndian.Uint64(got))
 				} else {
 					// slow path: assign unique id to value
 					nxt, err := labelNameB.NextSequence()
@@ -120,10 +109,7 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
-					r.ID[i] = append(r.ID[i], tsid.Column{
-						ID:    view,
-						Value: nxt,
-					})
+					r.ID[i].Append(view, nxt)
 				}
 			}
 

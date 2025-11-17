@@ -73,11 +73,19 @@ func (v *view) Reset() *view {
 type data map[rbf.Key]*roaring.Bitmap
 
 func (s data) Index(id uint64, value tsid.ID) {
-	s.bsi(value[0].ID, id, int64(value[0].Value))
-	metricID := value[0].Value
-	s.exists(MetricsLabelsExistence, metricID)
-	for i := 1; i < len(value); i++ {
-		s.mutex(value[i].ID, metricID, value[i].Value)
+	var (
+		idx      int
+		metricID uint64
+	)
+
+	for col, val := range value.Range() {
+		if idx == 0 {
+			metricID = val
+			s.bsi(col, id, int64(val))
+		} else {
+			s.mutex(col, metricID, val)
+		}
+		idx++
 	}
 }
 
