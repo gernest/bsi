@@ -11,6 +11,7 @@ import (
 
 	"github.com/gernest/bsi/internal/storage/buffer"
 	"github.com/gernest/bsi/internal/storage/raw"
+	"github.com/gernest/bsi/internal/storage/samples/resets"
 	"github.com/gernest/roaring"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -249,6 +250,9 @@ func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
 		h.CounterResetHint = histogram.NotCounterReset
 		return
 	}
+	if h.CounterResetHint == histogram.GaugeType {
+		return
+	}
 	if h.CounterResetHint == histogram.CounterReset {
 		return
 	}
@@ -264,6 +268,14 @@ func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
 		return
 	}
 	if h.ZeroCount < fh.old.ZeroCount {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+	if !resets.ExpandFloatSpansAndBuckets(fh.old.PositiveSpans, h.PositiveSpans, fh.old.PositiveBuckets, h.PositiveBuckets) {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+	if !resets.ExpandFloatSpansAndBuckets(fh.old.NegativeSpans, h.NegativeSpans, fh.old.NegativeBuckets, h.NegativeBuckets) {
 		h.CounterResetHint = histogram.CounterReset
 		return
 	}
