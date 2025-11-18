@@ -5,7 +5,6 @@ package samples
 
 import (
 	"bytes"
-	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -184,31 +183,39 @@ type Iter struct {
 	idx int
 	typ chunkenc.ValueType
 
-	fhReset counterReset[float64]
-	hReset  counterReset[uint64]
+	fhReset fhRest
 }
 
-type counterReset[T cmp.Ordered] struct {
-	v    T
-	init bool
+type fhRest struct {
+	old *histogram.FloatHistogram
 }
 
-func (c *counterReset[T]) Reset() {
-	*c = counterReset[T]{}
-}
+func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
+	defer func() {
+		fh.old = h
+	}()
 
-func (c *counterReset[T]) Add(v T) histogram.CounterResetHint {
-	if !c.init {
-		c.init = true
-		c.v = v
-		return histogram.NotCounterReset
+	if fh.old == nil {
+		return
 	}
-	if v < c.v {
-		c.v = v
-		return histogram.CounterReset
+	if h.CounterResetHint == histogram.CounterReset {
+		return
 	}
-	c.v = v
-	return histogram.NotCounterReset
+	if h.Count < fh.old.Count {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+	if h.Schema != fh.old.Schema || h.ZeroThreshold != fh.old.ZeroThreshold {
+		return
+	}
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, fh.old.CustomValues) {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+	if h.ZeroCount < fh.old.ZeroCount {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
 }
 
 // Init initializes i state.
@@ -226,8 +233,7 @@ func (i *Iter) Reset() {
 	i.ts.Value = i.ts.Value[:0]
 	i.idx = 0
 	i.typ = chunkenc.ValNone
-	i.fhReset.Reset()
-	i.hReset.Reset()
+	i.fhReset = fhRest{}
 }
 
 var _ chunkenc.Iterator = (*Iter)(nil)
@@ -274,10 +280,6 @@ func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	var h prompb.Histogram
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToIntHistogram()
-	hint := i.hReset.Add(r.Count)
-	if r.CounterResetHint != histogram.GaugeType {
-		r.CounterResetHint = hint
-	}
 	return int64(ts), r
 }
 
@@ -288,10 +290,7 @@ func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.
 	var h prompb.Histogram
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToFloatHistogram()
-	hint := i.fhReset.Add(r.Count)
-	if r.CounterResetHint != histogram.GaugeType {
-		r.CounterResetHint = hint
-	}
+	i.fhReset.Reset(r)
 	return int64(ts), r
 }
 
