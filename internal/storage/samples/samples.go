@@ -345,7 +345,6 @@ func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToFloatHistogram()
 	i.fhReset.Reset(r)
-	fmt.Println(r.Count, r.CounterResetHint)
 	return int64(ts), r
 }
 
