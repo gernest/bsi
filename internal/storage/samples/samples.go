@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -183,7 +184,56 @@ type Iter struct {
 	idx int
 	typ chunkenc.ValueType
 
+	hReset  hRest
 	fhReset fhRest
+}
+
+type hRest struct {
+	old *histogram.Histogram
+}
+
+func (a *hRest) Reset(h *histogram.Histogram) {
+	defer func() {
+		a.old = h
+	}()
+	if a.old == nil {
+		h.CounterResetHint = histogram.NotCounterReset
+		return
+	}
+	if h.CounterResetHint == histogram.CounterReset {
+		return
+	}
+	if value.IsStaleNaN(h.Sum) {
+		// This is a stale sample whose buckets and spans don't matter.
+		return
+	}
+	if value.IsStaleNaN(a.old.Sum) {
+		// If the last sample was stale, then we can only accept stale
+		// samples in this chunk.
+		h.CounterResetHint = histogram.UnknownCounterReset
+		return
+	}
+
+	if h.Count < a.old.Count {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+
+	if h.Schema != a.old.Schema || h.ZeroThreshold != a.old.ZeroThreshold {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.old.CustomValues) {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+
+	if h.ZeroCount < a.old.ZeroCount {
+		h.CounterResetHint = histogram.CounterReset
+		return
+	}
+	h.CounterResetHint = histogram.NotCounterReset
 }
 
 type fhRest struct {
@@ -196,6 +246,7 @@ func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
 	}()
 
 	if fh.old == nil {
+		h.CounterResetHint = histogram.NotCounterReset
 		return
 	}
 	if h.CounterResetHint == histogram.CounterReset {
@@ -216,6 +267,7 @@ func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
 		h.CounterResetHint = histogram.CounterReset
 		return
 	}
+	h.CounterResetHint = histogram.NotCounterReset
 }
 
 // Init initializes i state.
@@ -233,6 +285,7 @@ func (i *Iter) Reset() {
 	i.ts.Value = i.ts.Value[:0]
 	i.idx = 0
 	i.typ = chunkenc.ValNone
+	i.hReset = hRest{}
 	i.fhReset = fhRest{}
 }
 
@@ -280,6 +333,7 @@ func (i *Iter) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	var h prompb.Histogram
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToIntHistogram()
+	i.hReset.Reset(r)
 	return int64(ts), r
 }
 
@@ -291,6 +345,7 @@ func (i *Iter) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.
 	h.Unmarshal(i.s.s.Data[v])
 	r := h.ToFloatHistogram()
 	i.fhReset.Reset(r)
+	fmt.Println(r.Count, r.CounterResetHint)
 	return int64(ts), r
 }
 
