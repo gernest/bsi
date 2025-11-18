@@ -79,8 +79,8 @@ func (a *API) Appender(_ context.Context) storage.Appender {
 }
 
 type appender struct {
-	set db.Rows
 	db  *db.Store
+	set db.Rows
 }
 
 var _ storage.Appender = (*appender)(nil)

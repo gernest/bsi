@@ -189,8 +189,8 @@ type Iter struct {
 }
 
 type counterReset[T cmp.Ordered] struct {
-	init bool
 	v    T
+	init bool
 }
 
 func (c *counterReset[T]) Reset() {
