@@ -82,6 +82,7 @@ func (s data) Index(id uint64, value tsid.ID) {
 		if idx == 0 {
 			metricID = val
 			s.bsi(col, id, int64(val))
+			s.exists(MetricsLabelsExistence, metricID)
 		} else {
 			s.mutex(col, metricID, val)
 		}
