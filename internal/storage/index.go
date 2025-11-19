@@ -12,16 +12,8 @@ import (
 	"github.com/gernest/roaring/shardwidth"
 )
 
-// view is like a posting list with all shards that might contain data. This also
-// contains translation of label matchers which is shard agnostic.
-//
-// All data for view is read from txt database. Think of this as a guideline on
-// what to read from rbf storage.
 type view struct {
-	// when provided  applies an intersection of all match
-	match []match
-	// when provided applies a union of intersecting []match.
-	// used with exemplars search.
+	match    []match
 	matchAny [][]match
 }
 
