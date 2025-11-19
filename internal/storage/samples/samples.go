@@ -246,16 +246,18 @@ func (fh *fhRest) Reset(h *histogram.FloatHistogram) {
 		fh.old = h
 	}()
 
-	if fh.old == nil {
-		h.CounterResetHint = histogram.NotCounterReset
-		return
-	}
 	if h.CounterResetHint == histogram.GaugeType {
 		return
 	}
 	if h.CounterResetHint == histogram.CounterReset {
 		return
 	}
+
+	if fh.old == nil {
+		h.CounterResetHint = histogram.NotCounterReset
+		return
+	}
+
 	if h.Count < fh.old.Count {
 		h.CounterResetHint = histogram.CounterReset
 		return
