@@ -1,7 +1,6 @@
 package api
 
 import (
-	_ "embed"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql"
@@ -12,14 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:embed src.txt
-var src string
-
 func TestPromql(t *testing.T) {
 	parser.EnableExperimentalFunctions = true
 	parser.EnableExtendedRangeSelectors = true
 	parser.ExperimentalDurationExpr = true
-	promqltest.RunTestWithStorage(t, src, newTestEngine(t), newStorage)
+	promqltest.RunBuiltinTestsWithStorage(t, newTestEngine(t), newStorage)
 }
 
 func newTestEngine(t *testing.T) *promql.Engine {
