@@ -39,7 +39,7 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 }
 
 func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, start, end, baseMetrics, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
+	return db.read(vs, start, end, baseMetrics, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64, _ Kinds) error {
 		return readSamples(result, tx, records, shard, ra)
 	})
 }

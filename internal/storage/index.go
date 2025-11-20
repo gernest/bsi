@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/gernest/bsi/internal/bitmaps"
@@ -120,7 +121,7 @@ func (s data) get(shard, col uint64) *roaring.Bitmap {
 }
 
 func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, start, end, all, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
+	return db.read(vs, start, end, all, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64, _ Kinds) error {
 		return readSeries(result, tx, records, shard, ra)
 	})
 }
@@ -133,7 +134,16 @@ const (
 	baseExemplar
 )
 
-func (db *Store) read(vs *view, start, end int64, state readState, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, shard uint64) error) error {
+type Kinds [4]*roaring.Bitmap
+
+func (k *Kinds) Intersect(filter *roaring.Bitmap) (o Kinds) {
+	for i := range o {
+		o[i] = k[i].Intersect(filter)
+	}
+	return
+}
+
+func (db *Store) read(vs *view, start, end int64, state readState, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, shard uint64, kinds Kinds) error) error {
 	tx, err := db.db.Begin(false)
 	if err != nil {
 		return err
@@ -162,29 +172,61 @@ func (db *Store) read(vs *view, start, end int64, state readState, cb func(tx *r
 	if err != nil {
 		return err
 	}
+	var states Kinds
+	switch state {
+	case all:
+		for i := range states {
+			kind := Kind(i + 1)
+			states[i], err = row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(kind)))
+			if err != nil {
+				return err
+			}
+		}
+	case baseMetrics:
+		ra := roaring.NewBitmap()
+		for i := range states {
+			kind := Kind(i + 1)
+			if kind != Exemplar {
+				states[i], err = row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(kind)))
+				if err != nil {
+					return err
+				}
+				ra = ra.Union(states[i])
+				continue
+			}
+			states[i] = roaring.NewBitmap()
+		}
+		filter = filter.Intersect(ra)
+	case baseExemplar:
+		ra := roaring.NewBitmap()
+		for i := range states {
+			kind := Kind(i + 1)
+			if kind != Exemplar {
+				states[i] = roaring.NewBitmap()
+				continue
+			}
+			states[i], err = row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(kind)))
+			if err != nil {
+				return err
+			}
+			ra = ra.Union(states[i])
+		}
+		filter = filter.Intersect(ra)
+	default:
+		return fmt.Errorf("unknown read state %d", state)
+	}
 
-	if state != all {
-		exe, err := row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(Exemplar)))
-		if err != nil {
-			return err
-		}
-		if state == baseExemplar {
-			filter = filter.Intersect(exe)
-		} else {
-			filter = filter.Difference(exe)
-		}
+	if !filter.Any() {
+		// nothing matched
+		return nil
 	}
 
 	// 4. intersect time range with filter to get matching column ids.
 	match := ts.Intersect(row.NewRowFromBitmap(filter))
-	// matching logic is is complete now. After this only reading is done.
-	if !match.Any() {
-		// fast path: nothing matched return early.
-		return nil
-	}
 
 	for i := range match.Segments {
-		err := cb(tx, records, match.Segments[i].Data(), match.Segments[i].Shard())
+		data := match.Segments[i].Data()
+		err := cb(tx, records, data, match.Segments[i].Shard(), states.Intersect(data))
 		if err != nil {
 			return err
 		}
