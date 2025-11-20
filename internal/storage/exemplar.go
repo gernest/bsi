@@ -33,7 +33,7 @@ func (db *Store) SelectExemplar(start, end int64, matchers ...[]*labels.Matcher)
 
 func (db *Store) readExemplar(result *samples.Samples, vs *view, start, end int64) error {
 
-	return db.read(vs, start, end, true, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
+	return db.read(vs, start, end, baseExemplar, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
 		return readExemplars(result, tx, records, shard, ra)
 	})
 }

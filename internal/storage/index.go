@@ -120,12 +120,20 @@ func (s data) get(shard, col uint64) *roaring.Bitmap {
 }
 
 func (db *Store) readSeries(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, start, end, false, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
+	return db.read(vs, start, end, all, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64) error {
 		return readSeries(result, tx, records, shard, ra)
 	})
 }
 
-func (db *Store) read(vs *view, start, end int64, exemplar bool, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, shard uint64) error) error {
+type readState uint8
+
+const (
+	all readState = 1 + iota
+	baseMetrics
+	baseExemplar
+)
+
+func (db *Store) read(vs *view, start, end int64, state readState, cb func(tx *rbf.Tx, records *rbf.Records, filter *roaring.Bitmap, shard uint64) error) error {
 	tx, err := db.db.Begin(false)
 	if err != nil {
 		return err
@@ -155,18 +163,16 @@ func (db *Store) read(vs *view, start, end int64, exemplar bool, cb func(tx *rbf
 		return err
 	}
 
-	// 4. read exemplars
-	//
-	// we store exemplar along with the other timeseries. We need to distinguish between normal timeseries
-	// and exemplar columns.
-	exe, err := row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(Exemplar)))
-	if err != nil {
-		return err
-	}
-	if exemplar {
-		filter = filter.Intersect(exe)
-	} else {
-		filter = filter.Difference(exe)
+	if state != all {
+		exe, err := row.Mutex(tx, records, ts.Limit(), MetricsType, roaring.NewBitmap(uint64(Exemplar)))
+		if err != nil {
+			return err
+		}
+		if state == baseExemplar {
+			filter = filter.Intersect(exe)
+		} else {
+			filter = filter.Difference(exe)
+		}
 	}
 
 	// 4. intersect time range with filter to get matching column ids.
