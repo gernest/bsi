@@ -29,7 +29,7 @@ type Samples struct {
 	SeriesData map[uint64][]byte
 	Data       map[uint64][]byte
 	ls         []uint64
-	KindBSI    [4]*roaring.Bitmap
+	Kinds      [4]*roaring.Bitmap
 	LabelsBSI  raw.BSI
 	TsBSI      raw.BSI
 	ValuesBSI  raw.BSI
@@ -51,8 +51,8 @@ func (s *Samples) Init() {
 	s.LabelsBSI.Init()
 	s.TsBSI.Init()
 	s.ValuesBSI.Init()
-	for i := range s.KindBSI {
-		s.KindBSI[i] = roaring.NewBitmap()
+	for i := range s.Kinds {
+		s.Kinds[i] = roaring.NewBitmap()
 	}
 }
 
@@ -119,8 +119,8 @@ func (s *Samples) Make() storage.SeriesSet {
 	// We may have s stay in memory much longer depending on PromQL. We ensure
 	// small memory footprint is occupied.
 	s.LabelsBSI.Reset() // we never use this again.
-	for i := range s.KindBSI {
-		s.KindBSI[i].Optimize()
+	for i := range s.Kinds {
+		s.Kinds[i].Optimize()
 	}
 	s.TsBSI.Optimize()
 	s.ValuesBSI.Optimize()
@@ -313,7 +313,7 @@ func (i *Iter) Next() chunkenc.ValueType {
 		i.typ = chunkenc.ValNone
 		return i.typ
 	}
-	kind := i.s.s.KindBSI
+	kind := i.s.s.Kinds
 	id := i.ts.ID[i.idx]
 	switch {
 	case kind[0].Contains(id):

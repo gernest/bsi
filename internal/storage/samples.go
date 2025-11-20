@@ -39,8 +39,8 @@ func (db *Store) Select(_ context.Context, _ bool, hints *storage.SelectHints, m
 }
 
 func (db *Store) readTs(result *samples.Samples, vs *view, start, end int64) error {
-	return db.read(vs, start, end, baseMetrics, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64, _ Kinds) error {
-		return readSamples(result, tx, records, shard, ra)
+	return db.read(vs, start, end, baseMetrics, func(tx *rbf.Tx, records *rbf.Records, ra *roaring.Bitmap, shard uint64, kinds Kinds) error {
+		return readSamples(result, tx, records, shard, ra, kinds)
 	})
 }
 
@@ -55,13 +55,13 @@ func (db *Store) translate(result *samples.Samples) error {
 	}
 
 	return db.txt.View(func(tx *bbolt.Tx) error {
-		if ra := result.KindBSI[Histogram-1]; ra.Any() {
+		if ra := result.Kinds[Histogram-1]; ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
-		if ra := result.KindBSI[FloatHistogram-1]; ra.Any() {
+		if ra := result.Kinds[FloatHistogram-1]; ra.Any() {
 			readData(tx, histogramData, result.ValuesBSI.Transpose(ra))
 		}
-		if ra := result.KindBSI[Exemplar-1]; ra.Any() {
+		if ra := result.Kinds[Exemplar-1]; ra.Any() {
 			readData(tx, exemplarData, result.ValuesBSI.Transpose(ra))
 		}
 
@@ -87,7 +87,7 @@ func (db *Store) translate(result *samples.Samples) error {
 
 }
 
-func readSamples(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readSamples(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap, kinds Kinds) error {
 
 	{
 		root, ok := records.Get(rbf.Key{Column: MetricsTimestamp, Shard: shard})
@@ -100,13 +100,9 @@ func readSamples(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shar
 		}
 	}
 	{
-		root, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
-		if !ok {
-			return fmt.Errorf("missing metric type root record")
-		}
-		err := readRawKind(tx, root, shard, match, []Kind{Float, Histogram, FloatHistogram}, &result.KindBSI)
-		if err != nil {
-			return fmt.Errorf("reading metric type %w", err)
+
+		for i := range kinds {
+			result.Kinds[i] = result.Kinds[i].Union(kinds[i])
 		}
 	}
 	{
@@ -145,16 +141,11 @@ func readSeries(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shard
 	return nil
 }
 
-func readExemplars(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap) error {
+func readExemplars(result *samples.Samples, tx *rbf.Tx, records *rbf.Records, shard uint64, match *roaring.Bitmap, kinds Kinds) error {
 
 	{
-		root, ok := records.Get(rbf.Key{Column: MetricsType, Shard: shard})
-		if !ok {
-			return fmt.Errorf("missing metric type root record")
-		}
-		err := readRawKind(tx, root, shard, match, []Kind{Exemplar}, &result.KindBSI)
-		if err != nil {
-			return fmt.Errorf("reading metric type %w", err)
+		for i := range kinds {
+			result.Kinds[i] = result.Kinds[i].Union(kinds[i])
 		}
 	}
 	{
