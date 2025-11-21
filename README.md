@@ -12,3 +12,12 @@ the following core features.
 
 With BSI there is no need for third party remote storage, a single prometheus instance 
 can handle up to 1 million active timeseries without being OOM killed.
+
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./benchmarks/ram-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="./benchmarks/ram-light.svg">
+    <img alt="Bar chart with ram benchmark results" src="./benchmarks/ram-light.svg">
+  </picture>
+</p>

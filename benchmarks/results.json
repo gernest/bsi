@@ -1,0 +1,17 @@
+[
+    {
+        "name":"ram",
+        "unit":"mb",
+        "step":30,
+        "entries":[
+            {
+                "name": "bsi",
+                "value":36
+            },
+            {
+                "name": "prometheus",
+                "value":128
+            }
+        ]
+    }
+]
