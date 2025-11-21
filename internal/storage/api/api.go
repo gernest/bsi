@@ -67,8 +67,8 @@ func (a *API) Close() error {
 	return a.db.Close()
 }
 
-func (a *API) Delete(ctx context.Context, mint int64, maxt int64, ms ...*labels.Matcher) error {
-	return nil
+func (a *API) Delete(_ context.Context, mint int64, maxt int64, ms ...*labels.Matcher) error {
+	return a.db.Delete(mint, maxt, ms...)
 }
 
 // Appender implements storage.Appendable
