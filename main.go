@@ -438,7 +438,7 @@ func main() {
 		Default("data/").StringVar(&cfg.serverStoragePath)
 
 	serverOnlyFlag(a, "storage.tsdb.engine", "Storage engine for tsdb").
-		Default("rbf").StringVar(&cfg.tsdbEngine)
+		Default("bsi").StringVar(&cfg.tsdbEngine)
 
 	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
@@ -1311,7 +1311,7 @@ func main() {
 				}
 				var db storage.Storage
 				switch cfg.tsdbEngine {
-				case "rbf":
+				case "bsi":
 					da := new(api.API)
 					err := da.Init(localStoragePath, logger)
 					if err != nil {
