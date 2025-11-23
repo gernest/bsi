@@ -1,9 +1,21 @@
 data-source:
   # data source type [SIMULATOR|FILE]
-  type: FILE
-  # generate data on the fly
-  file:
-    location: benchmarks/10000-2025-11-20T00:00:00Z-2025-11-21T00:00:00Z-80s.tsbs
+  type: SIMULATOR
+  simulator:
+    # each time the simulator advances in time it skips this amount of time
+    log-interval: 60s
+    # maximum number of points to simulate (limit)
+    max-data-points: 10080000000
+    # number of hosts to simulate (each host has a different tag-set/label-set
+    scale: 10000
+    # set seed to some number to have reproducible data be generated
+    seed: 1
+    # start time of simulation
+    timestamp-start: "2025-11-22T00:00:00Z"
+    # end time of simulation
+    timestamp-end: "2025-11-23T00:00:00Z"
+    # use case to simulate
+    use-case: cpu-only
 loader:
   db-specific:
     adapter-write-url: "http://localhost:9090/api/v1/write"
