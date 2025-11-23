@@ -24,3 +24,6 @@ Below figure shows amount of ram after ingesting `108000000` rows with `10000` a
 </p>
 
 **Please run your own benchmarks with real data before reaching any conclusions**
+
+With **BSI** there is no big difference between a million active timeseries and  one active
+timeseries in term of memory consumption.
