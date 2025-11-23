@@ -58,7 +58,8 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 					mb := searchB.Bucket(b)
 					value := mb.Get(magic.Slice(m.Value))
 					if value != nil {
-						ra.DirectAdd(binary.BigEndian.Uint64(value))
+						va, _ := binary.Uvarint(value)
+						ra.DirectAdd(va)
 					}
 				} else if m.Value == "" {
 					// the label name is missing and we have label_name="" matcher.
@@ -77,7 +78,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 					prefix := magic.Slice(m.Prefix())
 					for a, b := mc.Seek(prefix); b != nil && bytes.HasPrefix(a, prefix); a, b = mc.Next() {
 						if m.Matches(magic.String(a)) {
-							va := binary.BigEndian.Uint64(b)
+							va, _ := binary.Uvarint(b)
 							ra.DirectAdd(va)
 						}
 					}
@@ -110,7 +111,7 @@ func find(tx *bbolt.Tx, matchers []*labels.Matcher) iter.Seq[match] {
 				mc := mb.Cursor()
 				for a, b := mc.First(); b != nil; a, b = mc.Next() {
 					if m.Matches(magic.String(a)) {
-						va := binary.BigEndian.Uint64(b)
+						va, _ := binary.Uvarint(b)
 						ra.DirectAdd(va)
 					}
 				}

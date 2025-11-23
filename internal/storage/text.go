@@ -82,7 +82,7 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 			}
 
 			// 3. store metrics_id => labels.Labels
-			err = metricsDataB.Put(binary.BigEndian.AppendUint64(nil, tid), r.Labels[i])
+			err = metricsDataB.Put(binary.AppendUvarint(nil, tid), r.Labels[i])
 			if err != nil {
 				return fmt.Errorf("storing metrics data %w", err)
 			}
@@ -98,14 +98,15 @@ func translate(db *bbolt.DB, r *Rows) (hi uint64, err error) {
 					return fmt.Errorf("assigning column id %w", err)
 				}
 				if got := labelNameB.Get(value); got != nil {
-					r.ID[i].Append(view, binary.BigEndian.Uint64(got))
+					va, _ := binary.Uvarint(got)
+					r.ID[i].Append(view, va)
 				} else {
 					// slow path: assign unique id to value
 					nxt, err := labelNameB.NextSequence()
 					if err != nil {
 						return fmt.Errorf("assigning sequence id %w", err)
 					}
-					err = labelNameB.Put(value, binary.BigEndian.AppendUint64(nil, nxt))
+					err = labelNameB.Put(value, binary.AppendUvarint(nil, nxt))
 					if err != nil {
 						return fmt.Errorf("storing sequence id %w", err)
 					}
@@ -194,7 +195,7 @@ func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 			return fmt.Errorf("assigning sequence %w", err)
 		}
 		values[i] = nxt
-		err = b.Put(binary.BigEndian.AppendUint64(nil, nxt), data[i])
+		err = b.Put(binary.AppendUvarint(nil, nxt), data[i])
 		if err != nil {
 			return fmt.Errorf("storing sequence %w", err)
 		}
@@ -204,13 +205,13 @@ func txt2u64(b *bbolt.Bucket, values []uint64, data [][]byte) error {
 
 func readFromU64(b *bbolt.Bucket, all *roaring.Bitmap, cb func(id uint64, value []byte) error) error {
 	cu := b.Cursor()
-	var lo, hi [8]byte
+	var lo, hi []byte
 	for a, b := range rangeSetsRa(all) {
-		binary.BigEndian.PutUint64(lo[:], a)
-		binary.BigEndian.PutUint64(hi[:], b)
+		lo = binary.AppendUvarint(lo[:0], a)
+		hi = binary.AppendUvarint(hi[:0], b)
 
 		for k, v := cu.Seek(lo[:]); v != nil && bytes.Compare(k, hi[:]) < 1; k, v = cu.Next() {
-			key := binary.BigEndian.Uint64(k)
+			key, _ := binary.Uvarint(k)
 			err := cb(key, v)
 			if err != nil {
 				return err
