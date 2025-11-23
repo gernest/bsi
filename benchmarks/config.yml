@@ -3,7 +3,7 @@ data-source:
   type: SIMULATOR
   simulator:
     # each time the simulator advances in time it skips this amount of time
-    log-interval: 60s
+    log-interval: 80s
     # maximum number of points to simulate (limit)
     max-data-points: 10080000000
     # number of hosts to simulate (each host has a different tag-set/label-set
