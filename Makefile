@@ -5,8 +5,12 @@ DATE_CMD := $(shell which gdate 2>/dev/null || echo date)
 TSBS_START := $(shell $(DATE_CMD) -u -d "1 day ago 00:00:00" +"%Y-%m-%dT%H:%M:%SZ")
 TSBS_END   := $(shell $(DATE_CMD) -u -d "00:00:00" +"%Y-%m-%dT%H:%M:%SZ")
 TSBS_STEP := 80s
+TSBS_QUERIES := 10000
+TSBS_WORKERS := 4
 TSBS_DATA_FILE := ./benchmarks/tsbs-data-$(TSBS_SCALE)-$(TSBS_START)-$(TSBS_END)-$(TSBS_STEP).tsbs
 TSBS_QUERY_FILE := ./benchmarks/tsbs-queries-$(TSBS_SCALE)-$(TSBS_START)-$(TSBS_END)-$(TSBS_QUERIES).gz
+
+TSBS_READ_URLS := http://localhost:9090
 
 generate: tsbs-generate-data tsbs-generate-queries
 
@@ -31,11 +35,14 @@ tsbs-generate-queries:
 		--timestamp-start=$(TSBS_START) \
 		--timestamp-end=$(TSBS_END) \
 		--query-type=cpu-max-all-8 \
-		--queries=1000 \
+		--queries=$(TSBS_QUERIES) \
 		| gzip > $(TSBS_QUERY_FILE)
 
 tsbs-load-data:
 	tsbs_load load prometheus --config=./benchmarks/config.yml
+
+tsbs-query-data:
+	cat $(TSBS_QUERY_FILE) | gunzip | tsbs_run_queries_victoriametrics --workers=$(TSBS_WORKERS) --urls=$(TSBS_READ_URLS)
 
 start:
 	./bsi --web.enable-remote-write-receiver
