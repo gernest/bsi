@@ -34,3 +34,5 @@ bsi*
 *.tsbs
 *.gz
 data
+# Added by goreleaser init:
+dist/
