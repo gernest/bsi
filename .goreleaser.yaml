@@ -16,10 +16,20 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
+    ldflags:
+      - -X github.com/prometheus/common/version.Version={{.Version}}
+      - -X github.com/prometheus/common/version.Revision={{.Commit}}
+      - -X github.com/prometheus/common/version.Branch={{.Branch}}
+      - -X github.com/prometheus/common/version.BuildUser=gernest
+      - -X github.com/prometheus/common/version.BuildDate={{.Date}}
     goos:
       - linux
       - windows
       - darwin
+      - dragonfly
+      - freebsd
+      - illumos
+      - netbsd
 
 archives:
   - formats: [tar.gz]
@@ -42,6 +52,7 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+      - "^chore:"
 
 release:
   footer: >-
