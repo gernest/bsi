@@ -22,14 +22,13 @@ builds:
       - -X github.com/prometheus/common/version.Branch={{.Branch}}
       - -X github.com/prometheus/common/version.BuildUser=gernest
       - -X github.com/prometheus/common/version.BuildDate={{.Date}}
+    goarch:
+      - amd64
+      - arm64
     goos:
       - linux
       - windows
       - darwin
-      - dragonfly
-      - freebsd
-      - illumos
-      - netbsd
 
 archives:
   - formats: [tar.gz]
