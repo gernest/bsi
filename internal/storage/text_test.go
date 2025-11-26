@@ -19,7 +19,7 @@ func TestText(t *testing.T) {
 		case "open":
 
 			db := new(Store)
-			err := db.Init(t.TempDir(), nil)
+			err := db.Init(t.TempDir(), nil, nil)
 			if err != nil {
 				td.Fatalf(t, "failed opening text database %v", err)
 				return ""
