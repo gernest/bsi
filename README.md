@@ -27,3 +27,18 @@ Below figure shows amount of ram after ingesting `108000000` rows with `10000` a
 
 With **BSI** there is no big difference between a million active timeseries and  one active
 timeseries in term of memory consumption.
+
+Our goal is to eventually upstream the changes, however it is a massive task because the underlying
+Roaring Bitmap Format was extracted from [FeatureBase](https://github.com/FeatureBaseDB/featurebase).
+With enough interests and sufficient performance gain, I will consider taking on the challenge.
+
+
+We port prometheus `v3.7.1` main entrypoint to use BSI. This is strictly for benchmarking 
+and evaluating only.
+
+Some things removed includes 
+
+- **tsdb**: only bsi is supported
+- **agent mode**: we do not generate prometheus wal files
+- **remote write**: bsi is optimized as a permanent storage, there is no point to send data to other nodes
+
