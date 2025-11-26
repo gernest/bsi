@@ -46,14 +46,12 @@ func (a *API) StartTime() (int64, error) {
 	return a.db.MinTs()
 }
 
-func (a *API) MaxTs() (int64, error) {
-	return a.db.MaxTs()
-}
-
+// Stats implements the api_v1.TSDBAdminStats interface.
 func (a *API) Stats(statsByLabelName string, limit int) (result *tsdb.Stats, err error) {
 	return a.db.Stats(statsByLabelName, limit)
 }
 
+// Snapshot implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (a *API) Snapshot(dir string, _ bool) error {
 	return a.db.Snapshot(dir)
 }
@@ -63,6 +61,7 @@ func (a *API) Close() error {
 	return a.db.Close()
 }
 
+// Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (a *API) Delete(_ context.Context, mint int64, maxt int64, ms ...*labels.Matcher) error {
 	return a.db.Delete(mint, maxt, ms...)
 }
