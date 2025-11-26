@@ -5,17 +5,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/oklog/ulid/v2"
 	"go.etcd.io/bbolt"
 )
 
-// Snapshot takes snapshot of the whole database. We have a very similar design like LSM
-// based systems, once full shards are immutable so we use hard links for faster snapshots.
+// Snapshot takes snapshot of the whole database. Snapshots occupies the same storage
+// space as current databases. We simply copy pages over to the snapshot directory.
 //
-// Partial shards are  manually copied.
-func (db *Store) Snapshot(dir string) error {
-	name := ulid.Make()
-	base := filepath.Join(dir, name.String())
+// Results in two files
+// 1. data : which is in RBF format
+// 2. txt : which is a bolt database containing symbol translations.
+//
+// Make sure snapshot dir is deleted after use to free up space.
+func (db *Store) Snapshot(base string) error {
 	err := os.MkdirAll(base, 0755)
 	if err != nil {
 		return err
