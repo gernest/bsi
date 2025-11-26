@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gernest/bsi/internal/rbf/cfg"
 	db "github.com/gernest/bsi/internal/storage"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -32,8 +33,8 @@ type API struct {
 var _ storage.Storage = (*API)(nil)
 
 // Init setup databases.
-func (a *API) Init(dataPath string, lo *slog.Logger) error {
-	return a.db.Init(filepath.Join(dataPath, "bsi"), lo)
+func (a *API) Init(dataPath string, lo *slog.Logger, opts *cfg.Config) error {
+	return a.db.Init(filepath.Join(dataPath, "bsi"), lo, opts)
 }
 
 // ChunkQuerier implements storage.ChunkQueryable.

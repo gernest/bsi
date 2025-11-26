@@ -35,10 +35,6 @@ type Config struct {
 	// for mmap correctness testing.
 	DoAllocZero bool `toml:"do-alloc-zero"`
 
-	// CursorCacheSize is the number of copies of Cursor{} to keep in our
-	// readyCursorCh arena to avoid GC pressure.
-	CursorCacheSize int64 `toml:"cursor-cache-size"`
-
 	// Logger specifies a logger for asynchronous errors, such as
 	// background checkpoints. It cannot be set from toml. The default is
 	// to use stderr.
@@ -57,9 +53,5 @@ func NewDefaultConfig() *Config {
 		FsyncEnabled:         true,
 		FsyncWALEnabled:      true,
 		MaxDelete:            DefaultMaxDelete,
-
-		// CI passed with 20. 50 was too big for CI, even on X-large instances.
-		// For now we default to 0, which means use sync.Pool.
-		CursorCacheSize: 0,
 	}
 }

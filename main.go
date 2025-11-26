@@ -40,6 +40,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/gernest/bsi/internal/rbf/cfg"
 	"github.com/gernest/bsi/internal/storage/api"
 	_ "github.com/gernest/bsi/internal/ui"
 	"github.com/grafana/regexp"
@@ -220,6 +221,7 @@ type flagConfig struct {
 	promslogConfig promslog.Config
 
 	tsdbEngine string
+	bsi        bsiOptions
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -439,6 +441,10 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.engine", "Storage engine for tsdb").
 		Default("bsi").StringVar(&cfg.tsdbEngine)
+
+	serverOnlyFlag(a, "storage.bsi.max-samples-database-size",
+		"The maximum size for bsi samples database file. Example: 512MB").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.bsi.MaxSize)
 
 	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
@@ -1313,7 +1319,8 @@ func main() {
 				switch cfg.tsdbEngine {
 				case "bsi":
 					da := new(api.API)
-					err := da.Init(localStoragePath, logger)
+					opts := cfg.bsi.To()
+					err := da.Init(localStoragePath, logger, opts)
 					if err != nil {
 						return fmt.Errorf("opening storage failed: %w", err)
 					}
@@ -1889,6 +1896,18 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 	}
 
 	return nil, ErrNotReady
+}
+
+type bsiOptions struct {
+	MaxSize units.Base2Bytes
+}
+
+func (o bsiOptions) To() *cfg.Config {
+	opts := cfg.NewDefaultConfig()
+	if o.MaxSize != 0 {
+		opts.MaxSize = int64(o.MaxSize)
+	}
+	return opts
 }
 
 // tsdbOptions is tsdb.Option version with defined units.

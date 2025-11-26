@@ -9,6 +9,7 @@ import (
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
+	"github.com/gernest/bsi/internal/rbf/cfg"
 	"github.com/gernest/roaring/shardwidth"
 	"github.com/prometheus/common/promslog"
 	"go.etcd.io/bbolt"
@@ -22,11 +23,17 @@ type Store struct {
 }
 
 // Init initializes store on dataPath.
-func (db *Store) Init(dataPath string, lo *slog.Logger) error {
+func (db *Store) Init(dataPath string, lo *slog.Logger, co *cfg.Config) error {
+	if co == nil {
+		co = cfg.NewDefaultConfig()
+	}
 	if lo == nil {
 		lo = promslog.NewNopLogger()
 	}
-	db.db = rbf.NewDB(dataPath, nil)
+	if co.Logger == nil {
+		co.Logger = lo
+	}
+	db.db = rbf.NewDB(dataPath, co)
 	err := db.db.Open()
 	if err != nil {
 		return fmt.Errorf("setup data path %w", err)

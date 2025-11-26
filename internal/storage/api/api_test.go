@@ -200,6 +200,6 @@ func openTestDB(t testing.TB) *API {
 	tb := t.(testing.TB)
 	tb.Helper()
 	a := new(API)
-	require.NoError(tb, a.Init(tb.TempDir(), nil))
+	require.NoError(tb, a.Init(tb.TempDir(), nil, nil))
 	return a
 }
