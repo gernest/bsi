@@ -77,7 +77,6 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
-	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
@@ -797,7 +796,7 @@ func main() {
 	)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
+		localStorage  = &readyStorage{}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
@@ -1300,7 +1299,6 @@ func main() {
 	}
 	if !agentMode {
 		// TSDB.
-		opts := cfg.tsdb.ToTSDBOptions()
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -1315,22 +1313,14 @@ func main() {
 						return errors.New("flag 'storage.tsdb.max-block-chunk-segment-size' must be set over 1MB")
 					}
 				}
-				var db storage.Storage
-				switch cfg.tsdbEngine {
-				case "bsi":
-					da := new(api.API)
-					opts := cfg.bsi.To()
-					err := da.Init(localStoragePath, logger, opts)
-					if err != nil {
-						return fmt.Errorf("opening storage failed: %w", err)
-					}
-					db = da
-				default:
-					db, err = openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
-					if err != nil {
-						return fmt.Errorf("opening storage failed: %w", err)
-					}
+
+				db := new(api.API)
+				opts := cfg.bsi.To()
+				err := db.Init(localStoragePath, logger, opts)
+				if err != nil {
+					return fmt.Errorf("opening storage failed: %w", err)
 				}
+
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn("This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.", "fs_type", fsType)
@@ -1351,10 +1341,6 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
-				if re, ok := db.(interface{ SetWriteNotified(wlog.WriteNotified) }); ok {
-					re.SetWriteNotified(remoteStorage)
-
-				}
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1465,41 +1451,6 @@ func main() {
 		}
 	}()
 	logger.Info("See you next time!")
-}
-
-func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
-	db, err := tsdb.Open(
-		dir,
-		logger.With("component", "tsdb"),
-		reg,
-		opts,
-		stats,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	reg.MustRegister(
-		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_lowest_timestamp_seconds",
-			Help: "Lowest timestamp value stored in the database.",
-		}, func() float64 {
-			bb := db.Blocks()
-			if len(bb) == 0 {
-				return float64(db.Head().MinTime() / 1000)
-			}
-			return float64(db.Blocks()[0].Meta().MinTime / 1000)
-		}), prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_min_time_seconds",
-			Help: "Minimum time bound of the head block.",
-		}, func() float64 { return float64(db.Head().MinTime() / 1000) }),
-		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_max_time_seconds",
-			Help: "Maximum timestamp of the head block.",
-		}, func() float64 { return float64(db.Head().MaxTime() / 1000) }),
-	)
-
-	return db, nil
 }
 
 type safePromQLNoStepSubqueryInterval struct {
@@ -1636,14 +1587,10 @@ type readyStorage struct {
 	mtx             sync.RWMutex
 	db              storage.Storage
 	startTimeMargin int64
-	stats           *tsdb.DBStats
 }
 
-func (s *readyStorage) ApplyConfig(conf *config.Config) error {
-	db := s.get()
-	if db, ok := db.(*tsdb.DB); ok {
-		return db.ApplyConfig(conf)
-	}
+func (s *readyStorage) ApplyConfig(_ *config.Config) error {
+
 	return nil
 }
 
@@ -1663,26 +1610,10 @@ func (s *readyStorage) get() storage.Storage {
 	return x
 }
 
-func (s *readyStorage) getStats() *tsdb.DBStats {
-	s.mtx.RLock()
-	x := s.stats
-	s.mtx.RUnlock()
-	return x
-}
-
 // StartTime implements the Storage interface.
 func (s *readyStorage) StartTime() (int64, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			var startTime int64
-			if len(db.Blocks()) > 0 {
-				startTime = db.Blocks()[0].Meta().MinTime
-			} else {
-				startTime = time.Now().Unix() * 1000
-			}
-			// Add a safety margin as it may take a few minutes for everything to spin up.
-			return startTime + s.startTimeMargin, nil
 		case *agent.DB:
 			return db.StartTime()
 		case *api.API:
@@ -1714,8 +1645,6 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.ExemplarQuerier(ctx)
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		case *api.API:
@@ -1780,12 +1709,10 @@ func (s *readyStorage) Close() error {
 func (s *readyStorage) CleanTombstones() error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.CleanTombstones()
 		case *agent.DB:
 			return agent.ErrUnsupported
 		case *api.API:
-			return errors.New("unsupported poeration for rbf storage")
+			return errors.New("unsupported operation for bsi storage")
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1797,12 +1724,10 @@ func (s *readyStorage) CleanTombstones() error {
 func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.BlockMetas(), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		case *api.API:
-			return nil, errors.New("unsupported poeration for rbf storage")
+			return nil, errors.New("unsupported operation for rbf storage")
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
@@ -1814,8 +1739,6 @@ func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.Delete(ctx, mint, maxt, ms...)
 		case *agent.DB:
 			return agent.ErrUnsupported
 		case *api.API:
@@ -1831,8 +1754,6 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.Snapshot(dir, withHead)
 		case *agent.DB:
 			return agent.ErrUnsupported
 		case *api.API:
@@ -1848,8 +1769,6 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
-		case *tsdb.DB:
-			return db.Head().Stats(statsByLabelName, limit), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		case *api.API:
@@ -1863,10 +1782,7 @@ func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, e
 
 // WALReplayStatus implements the api_v1.TSDBStats interface.
 func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
-	if x := s.getStats(); x != nil {
-		return x.Head.WALReplayStatus.GetWALReplayStatus(), nil
-	}
-	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
+	return tsdb.WALReplayStatus{}, nil
 }
 
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.
@@ -1933,31 +1849,6 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
-}
-
-func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
-	return tsdb.Options{
-		WALSegmentSize:                 int(opts.WALSegmentSize),
-		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
-		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:                       int64(opts.MaxBytes),
-		NoLockfile:                     opts.NoLockfile,
-		WALCompression:                 opts.WALCompressionType,
-		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
-		SamplesPerChunk:                opts.SamplesPerChunk,
-		StripeSize:                     opts.StripeSize,
-		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
-		EnableExemplarStorage:          opts.EnableExemplarStorage,
-		MaxExemplars:                   opts.MaxExemplars,
-		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
-		EnableNativeHistograms:         opts.EnableNativeHistograms,
-		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
-		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
-		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
-		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
-		UseUncachedIO:                  opts.UseUncachedIO,
-	}
 }
 
 // agentOptions is a version of agent.Options with defined units. This is required
