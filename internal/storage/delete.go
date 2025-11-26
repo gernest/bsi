@@ -173,8 +173,3 @@ func clearRecords(tx *rbf.Tx, root uint32, columns *roaring.Bitmap, rowSet func(
 
 	return cu.ApplyRewriter(0, rewriteExisting)
 }
-
-type translatedSHard struct {
-	shard uint64
-	data  *roaring.Bitmap
-}

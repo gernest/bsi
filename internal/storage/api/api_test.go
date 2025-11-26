@@ -96,7 +96,7 @@ func TestDeleteSimple(t *testing.T) {
 
 			expSamples := make([]chunks.Sample, 0, len(c.remaint))
 			for _, ts := range c.remaint {
-				expSamples = append(expSamples, sample{ts, smpls[ts], nil, nil})
+				expSamples = append(expSamples, sample{t: ts, f: smpls[ts], h: nil, fh: nil})
 			}
 
 			expss := newMockSeriesSet([]storage.Series{
@@ -155,14 +155,14 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 }
 
 type sample struct {
-	t  int64
-	f  float64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
+	t  int64
+	f  float64
 }
 
 func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
-	return sample{t, v, h, fh}
+	return sample{t: t, f: v, h: h, fh: fh}
 }
 
 func (s sample) T() int64                      { return s.t }
