@@ -28,7 +28,7 @@ func (k Key) IsEmpty() bool {
 }
 
 func (k Key) String() string {
-	return fmt.Sprintf("%06d_%06d", k.Shard, k.Column)
+	return fmt.Sprintf("%06d_%06d", k.Column, k.Shard)
 }
 
 type Record struct {
