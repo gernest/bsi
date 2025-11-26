@@ -18,7 +18,6 @@ import (
 var (
 	admin         = []byte("admin")
 	columns       = []byte("columns")
-	snapshots     = []byte("snapshots")
 	metricsSum    = []byte("sum")
 	metricsData   = []byte("data")
 	histogramData = []byte("histograms")
