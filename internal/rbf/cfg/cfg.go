@@ -9,6 +9,9 @@ const (
 	DefaultMaxWALCheckpointSize = DefaultMaxWALSize / 2
 )
 
+// DefaultMaxDelete is the maximum number of bits that will be deleted in a single batch
+const DefaultMaxDelete = 65536
+
 // Config defines externally configurable rbf options.
 // The separate package avoids circular import.
 type Config struct {
