@@ -40,5 +40,10 @@ Some things removed includes
 
 - **tsdb**: only bsi is supported
 - **agent mode**: we do not generate prometheus wal files
-- **remote write**: bsi is optimized as a permanent storage, there is no point to send data to other nodes
+- **remote storage**: bsi is optimized as a permanent storage, there is no point to send data to other nodes
 
+## Installation
+
+```bash
+go install github.com/gernest/bsi@latest
+```
