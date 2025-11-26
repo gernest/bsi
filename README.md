@@ -47,3 +47,7 @@ Some things removed includes
 ```bash
 go install github.com/gernest/bsi@latest
 ```
+
+## Usage 
+
+The `bsi` binary is the drop in replacement for prometheus `v3.7.1`.
