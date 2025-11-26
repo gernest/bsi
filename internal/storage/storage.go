@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
-	"sync/atomic"
 
 	"github.com/gernest/bsi/internal/bitmaps"
 	"github.com/gernest/bsi/internal/rbf"
@@ -20,9 +19,6 @@ type Store struct {
 	txt *bbolt.DB
 	lo  *slog.Logger
 	db  *rbf.DB
-
-	retention atomic.Int64
-	deletion  atomic.Uint64
 }
 
 // Init initializes store on dataPath.
@@ -87,10 +83,6 @@ func (db *Store) Init(dataPath string, lo *slog.Logger) error {
 	db.txt = tdb
 	db.lo = lo
 	return nil
-}
-
-func (db *Store) SetRetention(retention int64) {
-	db.retention.Store(retention)
 }
 
 // Close implements storage.Storage.
@@ -187,10 +179,6 @@ func (db *Store) AddRows(rows *Rows) error {
 	err = db.apply(ma)
 	if err != nil {
 		return err
-	}
-	if db.deletion.Load() != 0 {
-		// cleanup is expensive, avoid executing it in hot path.
-		go db.cleanup()
 	}
 	return nil
 }
